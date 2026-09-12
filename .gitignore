@@ -1,0 +1,59 @@
+# Konfigurasi lokal yang berisi Supabase URL dan anon key
+config.js
+/config.js
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+.npm/
+.yarn/
+
+# Hasil build dan cache
+dist/
+build/
+.cache/
+.netlify/
+
+# Log
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# File sistem operasi
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# File sementara
+*.tmp
+*.temp
+
+# Rahasia
+.env
+.env.*
+!.env.example
+config.js
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Aset mentah
+assets/images/source/
+
+# Sistem/editor
+.DS_Store
+Thumbs.db
+.vscode/
