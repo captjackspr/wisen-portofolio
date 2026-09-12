@@ -1540,14 +1540,21 @@ h3 {
 
   background: rgba(2, 4, 5, 0.75);
   opacity: 0;
-  backdrop-filter: blur(7px);
+  visibility: hidden;
+  pointer-events: none;
 
-  transition: opacity 250ms ease;
+  backdrop-filter: blur(7px);
+  transition:
+    opacity 250ms ease,
+    visibility 250ms ease;
 }
 
 .page-overlay.is-visible {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
+
 
 .side-panel {
   position: fixed;
