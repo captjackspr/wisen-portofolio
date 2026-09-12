@@ -1,6 +1,4 @@
-# Konfigurasi lokal yang berisi Supabase URL dan anon key
-config.js
-/config.js
+
 
 # Environment variables
 .env
