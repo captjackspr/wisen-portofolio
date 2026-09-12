@@ -7,16 +7,22 @@ document.addEventListener("DOMContentLoaded", initAdmin);
 
 async function initAdmin() {
   try {
-    if (!window.supabase) {
-      throw new Error("Supabase belum berhasil dimuat.");
+    console.log("APP_CONFIG:", window.APP_CONFIG);
+    console.log("Supabase library:", window.supabase);
+
+    if (!window.supabase?.createClient) {
+      throw new Error(
+        "Supabase belum berhasil dimuat. Periksa script CDN di admin.html."
+      );
     }
 
     if (
-      !window.APP_CONFIG ||
-      !window.APP_CONFIG.SUPABASE_URL ||
-      !window.APP_CONFIG.SUPABASE_ANON_KEY
+      !window.APP_CONFIG?.SUPABASE_URL ||
+      !window.APP_CONFIG?.SUPABASE_ANON_KEY
     ) {
-      throw new Error("Konfigurasi Supabase tidak ditemukan.");
+      throw new Error(
+        "Konfigurasi Supabase tidak ditemukan. Periksa config.js."
+      );
     }
 
     supabaseClient = window.supabase.createClient(
@@ -52,11 +58,13 @@ async function initAdmin() {
     showAdminContent(user, profile);
     bindAdminEvents();
     await loadDashboardData();
+
   } catch (error) {
     console.error("Admin initialization error:", error);
     showError(error.message || "Gagal memuat admin panel.");
   }
 }
+
 
 async function loadProfile(userId) {
   const { data, error } = await supabaseClient
