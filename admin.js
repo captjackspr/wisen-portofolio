@@ -13,15 +13,15 @@ async function initAdmin() {
 
     if (
       !window.APP_CONFIG ||
-      !window.APP_CONFIG.supabaseUrl ||
-      !window.APP_CONFIG.supabaseAnonKey
+      !window.APP_CONFIG.SUPABASE_URL ||
+      !window.APP_CONFIG.SUPABASE_ANON_KEY
     ) {
       throw new Error("Konfigurasi Supabase tidak ditemukan.");
     }
 
     supabaseClient = window.supabase.createClient(
-      window.APP_CONFIG.supabaseUrl,
-      window.APP_CONFIG.supabaseAnonKey
+      window.APP_CONFIG.SUPABASE_URL,
+      window.APP_CONFIG.SUPABASE_ANON_KEY
     );
 
     const {
