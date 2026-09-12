@@ -7,27 +7,39 @@ document.addEventListener("DOMContentLoaded", initAdmin);
 
 async function initAdmin() {
   try {
-    console.log("APP_CONFIG:", window.APP_CONFIG);
-    console.log("Supabase library:", window.supabase);
+    showLoading();
 
-    if (!window.supabase?.createClient) {
+    // Pastikan library Supabase tersedia
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
       throw new Error(
-        "Supabase belum berhasil dimuat. Periksa script CDN di admin.html."
+        "Library Supabase belum termuat. Periksa koneksi internet atau CDN."
       );
     }
 
-    if (
-      !window.APP_CONFIG?.SUPABASE_URL ||
-      !window.APP_CONFIG?.SUPABASE_ANON_KEY
-    ) {
+    // Ambil konfigurasi secara aman
+    const config = window.APP_CONFIG;
+
+    if (!config) {
       throw new Error(
-        "Konfigurasi Supabase tidak ditemukan. Periksa config.js."
+        "APP_CONFIG tidak ditemukan. Pastikan file config.js dimuat."
+      );
+    }
+
+    const supabaseUrl =
+      config.SUPABASE_URL || config.supabaseUrl;
+
+    const supabaseAnonKey =
+      config.SUPABASE_ANON_KEY || config.supabaseAnonKey;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error(
+        "SUPABASE_URL atau SUPABASE_ANON_KEY belum diisi di config.js."
       );
     }
 
     supabaseClient = window.supabase.createClient(
-      window.APP_CONFIG.SUPABASE_URL,
-      window.APP_CONFIG.SUPABASE_ANON_KEY
+      supabaseUrl,
+      supabaseAnonKey
     );
 
     const {
@@ -35,9 +47,7 @@ async function initAdmin() {
       error: userError
     } = await supabaseClient.auth.getUser();
 
-    if (userError) {
-      throw userError;
-    }
+    if (userError) throw userError;
 
     if (!user) {
       window.location.href = "index.html";
@@ -46,356 +56,176 @@ async function initAdmin() {
 
     currentUser = user;
 
-    const profile = await loadProfile(user.id);
+    const { data: profile, error: profileError } =
+      await supabaseClient
+        .from("profiles")
+        .select("id, full_name, role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    if (profileError) throw profileError;
 
     if (!profile || profile.role !== "admin") {
-      alert("Akses ditolak. Akun kamu bukan admin.");
-      await supabaseClient.auth.signOut();
-      window.location.href = "index.html";
-      return;
+      throw new Error(
+        "Akses ditolak. Role akun kamu belum diset sebagai admin."
+      );
     }
 
-    showAdminContent(user, profile);
-    bindAdminEvents();
-    await loadDashboardData();
+    showAdminContent(profile);
+    bindEvents();
+    await loadDashboard();
 
   } catch (error) {
     console.error("Admin initialization error:", error);
-    showError(error.message || "Gagal memuat admin panel.");
+    showError(error.message || "Terjadi kesalahan.");
   }
 }
 
+function bindEvents() {
+  document
+    .getElementById("logoutButton")
+    ?.addEventListener("click", logout);
 
-async function loadProfile(userId) {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("id, role, full_name")
-    .eq("id", userId)
-    .maybeSingle();
+  document
+    .getElementById("retryButton")
+    ?.addEventListener("click", initAdmin);
+
+  document
+    .getElementById("refreshButton")
+    ?.addEventListener("click", loadDashboard);
+}
+
+async function loadDashboard() {
+  setText("statProjects", await countRows("projects"));
+  setText("statServices", await countRows("services"));
+  setText("statOrders", await countRows("orders"));
+  setText("statMessages", await countRows("messages"));
+
+  await loadOrders();
+}
+
+async function countRows(table) {
+  const { count, error } = await supabaseClient
+    .from(table)
+    .select("*", { count: "exact", head: true });
 
   if (error) {
-    throw error;
+    console.warn(`Gagal menghitung ${table}:`, error.message);
+    return 0;
   }
 
-  return data;
-}
-
-function showAdminContent(user, profile) {
-  const loading = document.querySelector("#admin-loading");
-  const content = document.querySelector("#admin-content");
-  const email = document.querySelector("#admin-email");
-
-  loading?.setAttribute("hidden", "");
-  content?.removeAttribute("hidden");
-
-  if (email) {
-    email.textContent = profile.full_name || user.email || "Admin";
-  }
-}
-
-function bindAdminEvents() {
-  document
-    .querySelector("#logout-button")
-    ?.addEventListener("click", logoutAdmin);
-
-  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      switchTab(button.dataset.adminTab);
-    });
-  });
-
-  document.querySelectorAll("[data-go-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      switchTab(button.dataset.goTab);
-    });
-  });
-
-  document
-    .querySelector("#refresh-projects")
-    ?.addEventListener("click", loadProjects);
-
-  document
-    .querySelector("#refresh-services")
-    ?.addEventListener("click", loadServices);
-
-  document
-    .querySelector("#refresh-orders")
-    ?.addEventListener("click", loadOrders);
-
-  document
-    .querySelector("#refresh-messages")
-    ?.addEventListener("click", loadMessages);
-}
-
-function switchTab(tabName) {
-  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
-    button.classList.toggle(
-      "active",
-      button.dataset.adminTab === tabName
-    );
-  });
-
-  document.querySelectorAll("[data-panel]").forEach((panel) => {
-    const isActive = panel.dataset.panel === tabName;
-
-    panel.toggleAttribute("hidden", !isActive);
-    panel.classList.toggle("active", isActive);
-  });
-
-  if (tabName === "projects") loadProjects();
-  if (tabName === "services") loadServices();
-  if (tabName === "orders") loadOrders();
-  if (tabName === "messages") loadMessages();
-}
-
-async function loadDashboardData() {
-  await Promise.all([
-    loadProjects(),
-    loadServices(),
-    loadOrders(),
-    loadMessages()
-  ]);
-}
-
-async function loadProjects() {
-  const body = document.querySelector("#projects-table-body");
-
-  if (!body) return;
-
-  body.innerHTML = loadingRow(4);
-
-  const { data, error } = await supabaseClient
-    .from("projects")
-    .select("*")
-    .order("sort_order", { ascending: true });
-
-  if (error) {
-    body.innerHTML = errorRow(4, error.message);
-    setStatus(`Projects: ${error.message}`, "error");
-    return;
-  }
-
-  document.querySelector("#stat-projects").textContent =
-    data?.length || 0;
-
-  if (!data?.length) {
-    body.innerHTML = emptyRow(4, "Belum ada project.");
-    return;
-  }
-
-  body.innerHTML = data.map((project) => {
-    const title = project.title || project.name || "Tanpa judul";
-    const category = project.category || "-";
-    const published = project.published !== false;
-    const sortOrder = project.sort_order ?? "-";
-
-    return `
-      <tr>
-        <td><strong>${escapeHtml(title)}</strong></td>
-        <td>${escapeHtml(category)}</td>
-        <td>
-          <span class="admin-badge ${
-            published
-              ? "admin-badge-success"
-              : "admin-badge-muted"
-          }">
-            ${published ? "Published" : "Draft"}
-          </span>
-        </td>
-        <td>${escapeHtml(String(sortOrder))}</td>
-      </tr>
-    `;
-  }).join("");
-}
-
-async function loadServices() {
-  const body = document.querySelector("#services-table-body");
-
-  if (!body) return;
-
-  body.innerHTML = loadingRow(3);
-
-  const { data, error } = await supabaseClient
-    .from("services")
-    .select("*")
-    .order("sort_order", { ascending: true });
-
-  if (error) {
-    body.innerHTML = errorRow(3, error.message);
-    setStatus(`Services: ${error.message}`, "error");
-    return;
-  }
-
-  document.querySelector("#stat-services").textContent =
-    data?.length || 0;
-
-  if (!data?.length) {
-    body.innerHTML = emptyRow(3, "Belum ada layanan.");
-    return;
-  }
-
-  body.innerHTML = data.map((service) => {
-    const name = service.title || service.name || "Tanpa nama";
-    const description = service.description || "-";
-    const published = service.published !== false;
-
-    return `
-      <tr>
-        <td><strong>${escapeHtml(name)}</strong></td>
-        <td>${escapeHtml(description)}</td>
-        <td>
-          <span class="admin-badge ${
-            published
-              ? "admin-badge-success"
-              : "admin-badge-muted"
-          }">
-            ${published ? "Active" : "Hidden"}
-          </span>
-        </td>
-      </tr>
-    `;
-  }).join("");
+  return count || 0;
 }
 
 async function loadOrders() {
-  const body = document.querySelector("#orders-table-body");
+  const tbody = document.getElementById("ordersTableBody");
 
-  if (!body) return;
+  if (!tbody) return;
 
-  body.innerHTML = loadingRow(5);
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="5">Memuat data...</td>
+    </tr>
+  `;
 
   const { data, error } = await supabaseClient
     .from("orders")
-    .select("*")
-    .order("created_at", { ascending: false });
+    .select(`
+      id,
+      customer_name,
+      customer_email,
+      status,
+      created_at,
+      services (
+        title
+      )
+    `)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
   if (error) {
-    body.innerHTML = errorRow(5, error.message);
-    setStatus(`Orders: ${error.message}`, "error");
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5">Gagal memuat orders: ${escapeHtml(error.message)}</td>
+      </tr>
+    `;
     return;
   }
 
-  document.querySelector("#stat-orders").textContent =
-    data?.length || 0;
-
-  if (!data?.length) {
-    body.innerHTML = emptyRow(5, "Belum ada pesanan.");
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5">Belum ada pesanan.</td>
+      </tr>
+    `;
     return;
   }
 
-  body.innerHTML = data.map((order) => {
-    const name = order.name || order.full_name || "-";
-    const email = order.email || "-";
-    const service = order.service || "-";
-    const status = order.status || "pending";
-    const date = formatDate(order.created_at);
+  tbody.innerHTML = data.map((order) => {
+    const serviceName = order.services?.title || "-";
 
     return `
       <tr>
-        <td><strong>${escapeHtml(name)}</strong></td>
-        <td>${escapeHtml(email)}</td>
-        <td>${escapeHtml(service)}</td>
+        <td>${escapeHtml(order.customer_name || "-")}</td>
+        <td>${escapeHtml(order.customer_email || "-")}</td>
+        <td>${escapeHtml(serviceName)}</td>
         <td>
-          <span class="admin-badge admin-badge-muted">
-            ${escapeHtml(status)}
+          <span class="status">
+            ${escapeHtml(order.status || "pending")}
           </span>
         </td>
-        <td>${escapeHtml(date)}</td>
+        <td>${formatDate(order.created_at)}</td>
       </tr>
     `;
   }).join("");
 }
 
-async function loadMessages() {
-  const body = document.querySelector("#messages-table-body");
-
-  if (!body) return;
-
-  body.innerHTML = loadingRow(3);
-
-  const { data, error } = await supabaseClient
-    .from("messages")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    body.innerHTML = errorRow(3, error.message);
-    setStatus(`Messages: ${error.message}`, "error");
-    return;
-  }
-
-  document.querySelector("#stat-messages").textContent =
-    data?.length || 0;
-
-  if (!data?.length) {
-    body.innerHTML = emptyRow(3, "Belum ada pesan.");
-    return;
-  }
-
-  body.innerHTML = data.map((message) => {
-    const sender =
-      message.sender_email ||
-      message.email ||
-      message.user_id ||
-      "Pengunjung";
-
-    const content =
-      message.content ||
-      message.message ||
-      "-";
-
-    const date = formatDate(message.created_at);
-
-    return `
-      <tr>
-        <td>${escapeHtml(String(sender))}</td>
-        <td>${escapeHtml(String(content))}</td>
-        <td>${escapeHtml(date)}</td>
-      </tr>
-    `;
-  }).join("");
-}
-
-async function logoutAdmin() {
+async function logout() {
   if (!supabaseClient) return;
 
   await supabaseClient.auth.signOut();
   window.location.href = "index.html";
 }
 
-function loadingRow(columnCount) {
-  return `
-    <tr>
-      <td colspan="${columnCount}">Memuat data...</td>
-    </tr>
-  `;
+function showLoading() {
+  document.getElementById("loadingState")?.classList.remove("hidden");
+  document.getElementById("errorState")?.classList.add("hidden");
+  document.getElementById("adminContent")?.classList.add("hidden");
 }
 
-function emptyRow(columnCount, message) {
-  return `
-    <tr>
-      <td colspan="${columnCount}">${escapeHtml(message)}</td>
-    </tr>
-  `;
+function showAdminContent(profile) {
+  document.getElementById("loadingState")?.classList.add("hidden");
+  document.getElementById("errorState")?.classList.add("hidden");
+  document.getElementById("adminContent")?.classList.remove("hidden");
+
+  setText(
+    "adminName",
+    profile.full_name || currentUser?.email || "Admin"
+  );
+
+  setText("adminEmail", currentUser?.email || "");
 }
 
-function errorRow(columnCount, message) {
-  return `
-    <tr>
-      <td colspan="${columnCount}">
-        Gagal memuat data: ${escapeHtml(message)}
-      </td>
-    </tr>
-  `;
+function showError(message) {
+  document.getElementById("loadingState")?.classList.add("hidden");
+  document.getElementById("adminContent")?.classList.add("hidden");
+  document.getElementById("errorState")?.classList.remove("hidden");
+  setText("errorMessage", message);
+}
+
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
 }
 
 function formatDate(value) {
   if (!value) return "-";
 
-  return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
+  return new Date(value).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
 }
 
 function escapeHtml(value) {
@@ -405,33 +235,4 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function setStatus(message, type = "") {
-  const status = document.querySelector("#admin-status");
-
-  if (!status) return;
-
-  status.textContent = message;
-  status.className = `admin-status ${type}`;
-
-  window.setTimeout(() => {
-    status.textContent = "";
-    status.className = "admin-status";
-  }, 5000);
-}
-
-function showError(message) {
-  const loading = document.querySelector("#admin-loading");
-
-  if (loading) {
-    loading.innerHTML = `
-      <p style="color: var(--danger);">
-        ${escapeHtml(message)}
-      </p>
-      <a class="button button-secondary" href="index.html">
-        Kembali ke website
-      </a>
-    `;
-  }
 }
