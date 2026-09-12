@@ -1,274 +1,690 @@
-const config = window.APP_CONFIG;
+"use strict";
 
-if (!config?.SUPABASE_URL || !config?.SUPABASE_ANON_KEY) {
+/* =========================================================
+   SUPABASE INITIALIZATION
+========================================================= */
+
+const APP_CONFIG = window.APP_CONFIG;
+
+if (!APP_CONFIG?.SUPABASE_URL || !APP_CONFIG?.SUPABASE_ANON_KEY) {
   throw new Error(
-    "Konfigurasi Supabase tidak ditemukan. Pastikan config.js sudah dibuat dan dimuat sebelum app.js."
+    "Konfigurasi Supabase tidak ditemukan. Periksa file config.js."
   );
 }
 
-const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
+if (!window.supabase?.createClient) {
+  throw new Error(
+    "Library Supabase belum dimuat. Periksa urutan script HTML."
+  );
+}
 
 const supabaseClient = window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
+  APP_CONFIG.SUPABASE_URL,
+  APP_CONFIG.SUPABASE_ANON_KEY
 );
 
+/* =========================================================
+   APPLICATION STATE
+========================================================= */
 
 const state = {
   user: null,
   profile: null,
   projects: [],
   services: [],
-  authMode: "login",
   conversationId: null,
   realtimeChannel: null
 };
 
+/* =========================================================
+   DOM HELPERS
+========================================================= */
+
 const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => document.querySelectorAll(selector);
+
+const $$ = (selector) => {
+  return Array.from(document.querySelectorAll(selector));
+};
+
+function setText(selector, value) {
+  const element = $(selector);
+
+  if (element) {
+    element.textContent = value ?? "";
+  }
+}
 
 function escapeHTML(value = "") {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[character]));
+  return String(value).replace(/[&<>"']/g, (character) => {
+    const characters = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    };
+
+    return characters[character];
+  });
+}
+
+function normalizeTools(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 function formatPrice(value) {
-  if (!value) return "Hubungi untuk harga";
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "Diskusikan";
+  }
+
   return `Mulai Rp${Number(value).toLocaleString("id-ID")}`;
 }
 
-function toast(message, type = "success") {
-  const element = document.createElement("div");
-  element.className = `toast ${type}`;
-  element.textContent = message;
+function formatTime(value) {
+  if (!value) return "";
 
-  $("#toastContainer").appendChild(element);
-  setTimeout(() => element.remove(), 3500);
+  return new Date(value).toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
-async function initialize() {
-  $("#currentYear").textContent = new Date().getFullYear();
+/* =========================================================
+   TOAST
+========================================================= */
 
-  const {
-    data: { session }
-  } = await supabaseClient.auth.getSession();
+function showToast(message, type = "success") {
+  let container = $("#toastContainer");
 
-  state.user = session?.user || null;
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.className = "toast-container";
+    document.body.appendChild(container);
+  }
 
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+
+  container.appendChild(toast);
+
+  window.setTimeout(() => {
+    toast.remove();
+  }, 4000);
+}
+
+/* =========================================================
+   INITIALIZATION
+========================================================= */
+
+async function initializeApp() {
+  setText("#currentYear", new Date().getFullYear());
+
+  bindUIEvents();
+  bindMobileMenu();
+
+  await restoreSession();
+  await loadInitialData();
+
+  updateAccountUI();
+
+  supabaseClient.auth.onAuthStateChange(handleAuthStateChange);
+}
+
+async function restoreSession() {
+  const { data, error } = await supabaseClient.auth.getSession();
+
+  if (error) {
+    console.error("Gagal mengambil session:", error);
+    return;
+  }
+
+  state.user = data?.session?.user || null;
+
+  if (state.user) {
+    await loadProfile();
+  }
+}
+
+async function loadInitialData() {
   await Promise.all([
     loadProjects(),
     loadServices()
   ]);
+}
+
+async function handleAuthStateChange(_event, session) {
+  state.user = session?.user || null;
+  state.profile = null;
 
   if (state.user) {
     await loadProfile();
   }
 
   updateAccountUI();
-  bindEvents();
 }
 
-async function loadProfile() {
-  if (!state.user) return;
+/* =========================================================
+   PROJECTS
+========================================================= */
 
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("*")
-    .eq("id", state.user.id)
-    .single();
+async function loadProjects() {
+  const projectGrid = $("#project-grid");
 
-  if (error) {
-    console.error(error);
+  if (!projectGrid) {
     return;
   }
 
-  state.profile = data;
-}
-
-async function loadProjects() {
   const { data, error } = await supabaseClient
     .from("projects")
     .select("*")
-    .order("sort_order")
+    .eq("published", true)
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false });
 
   if (error) {
-    $("#projectGrid").innerHTML =
-      `<p class="empty-state">Portofolio belum dapat dimuat.</p>`;
+    console.error("Gagal memuat project:", error);
+
+    projectGrid.innerHTML = `
+      <p class="empty-state">
+        Portofolio belum dapat dimuat.
+      </p>
+    `;
+
     return;
   }
 
   state.projects = data || [];
-  $("#projectCount").textContent = `${state.projects.length}+`;
+
+  setText("#projectCount", `${state.projects.length}+`);
+
   renderProjects(state.projects);
 }
 
-function renderProjects(projects) {
-  if (!projects.length) {
-    $("#projectGrid").innerHTML =
-      `<p class="empty-state">Belum ada portofolio.</p>`;
+function renderProjects(projects = []) {
+  const projectGrid = $("#project-grid");
+
+  if (!projectGrid) {
     return;
   }
 
-  $("#projectGrid").innerHTML = projects.map((project) => `
-    <article class="project-card">
-      <div class="project-image">
-        ${
-          project.image_url
-            ? `<img src="${escapeHTML(project.image_url)}"
-                    alt="${escapeHTML(project.title)}">`
-            : `<div class="image-placeholder">WISEN / WORK</div>`
-        }
-        ${project.featured ? `<span class="featured">Unggulan</span>` : ""}
-      </div>
+  if (!projects.length) {
+    projectGrid.innerHTML = `
+      <p class="empty-state">
+        Belum ada portofolio.
+      </p>
+    `;
 
-      <div class="project-body">
-        <span class="project-category">
-          ${escapeHTML(project.category)}
-        </span>
+    return;
+  }
 
-        <h3>${escapeHTML(project.title)}</h3>
-        <p>${escapeHTML(project.description || "")}</p>
+  projectGrid.innerHTML = projects.map((project, index) => {
+    const tools = normalizeTools(project.tools);
 
-        <div class="tool-list">
-          ${(project.tools || []).map((tool) =>
-            `<span>${escapeHTML(tool)}</span>`
-          ).join("")}
+    const imageHTML = project.image_url
+      ? `
+        <img
+          src="${escapeHTML(project.image_url)}"
+          alt="${escapeHTML(project.title || "Project")}"
+          loading="lazy"
+        >
+      `
+      : `
+        <div class="image-placeholder">
+          WISEN / WORK
+        </div>
+      `;
+
+    const previewHTML = project.project_url
+      ? `
+        <button
+          class="project-open"
+          type="button"
+          data-preview-url="${escapeHTML(project.project_url)}"
+          data-preview-title="${escapeHTML(project.title || "Project")}"
+        >
+          <span>Lihat</span> ↗
+        </button>
+      `
+      : "";
+
+    const toolsHTML = tools.length
+      ? tools.map((tool) => `
+          <span>${escapeHTML(tool)}</span>
+        `).join("")
+      : "";
+
+    return `
+      <article
+        class="project-card"
+        data-category="${escapeHTML(project.category || "")}"
+      >
+        <div class="project-media">
+          ${imageHTML}
+
+          <span class="project-number">
+            ${String(index + 1).padStart(2, "0")}
+          </span>
+
+          ${previewHTML}
         </div>
 
-        ${
-          project.project_url
-            ? `
-              <button
-                class="text-link"
-                data-preview-url="${escapeHTML(project.project_url)}"
-                data-preview-title="${escapeHTML(project.title)}"
-              >
-                Preview proyek →
-              </button>
-            `
-            : `<span class="muted">Studi kasus internal</span>`
-        }
-      </div>
-    </article>
-  `).join("");
+        <div class="project-info">
+          <div>
+            <p class="project-type">
+              ${escapeHTML(project.category || "Project")}
+            </p>
+
+            <h3>
+              ${escapeHTML(project.title || "Tanpa judul")}
+            </h3>
+
+            <p>
+              ${escapeHTML(project.description || "")}
+            </p>
+          </div>
+
+          <div class="project-tags">
+            ${toolsHTML}
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
+function filterProjects(category) {
+  if (!category || category === "all") {
+    renderProjects(state.projects);
+    return;
+  }
+
+  const filteredProjects = state.projects.filter((project) => {
+    return String(project.category || "").toLowerCase() ===
+      String(category).toLowerCase();
+  });
+
+  renderProjects(filteredProjects);
+}
+
+/* =========================================================
+   SERVICES
+========================================================= */
+
 async function loadServices() {
+  const serviceList = $("#service-list");
+
+  if (!serviceList) {
+    return;
+  }
+
   const { data, error } = await supabaseClient
     .from("services")
     .select("*")
-    .order("sort_order");
+    .order("sort_order", { ascending: true });
 
   if (error) {
-    console.error(error);
+    console.error("Gagal memuat layanan:", error);
+
+    serviceList.innerHTML = `
+      <p class="empty-state">
+        Layanan belum dapat dimuat.
+      </p>
+    `;
+
     return;
   }
 
   state.services = data || [];
 
-  $("#serviceGrid").innerHTML = state.services.map((service, index) => `
-    <article class="service-card">
-      <span class="service-number">
-        ${String(index + 1).padStart(2, "0")}
-      </span>
+  renderServices();
+  populateServiceSelect();
+}
 
-      <h3>${escapeHTML(service.title)}</h3>
-      <p>${escapeHTML(service.description || "")}</p>
+function renderServices() {
+  const serviceList = $("#service-list");
 
-      <div class="service-meta">
-        <strong>${formatPrice(service.price_start)}</strong>
-        <span>± ${service.delivery_days || "-"} hari</span>
-      </div>
+  if (!serviceList) {
+    return;
+  }
 
-      <button
-        class="button button-secondary full choose-service"
-        data-service="${service.id}"
-      >
-        Pilih jasa
-      </button>
-    </article>
-  `).join("");
+  if (!state.services.length) {
+    serviceList.innerHTML = `
+      <p class="empty-state">
+        Belum ada layanan.
+      </p>
+    `;
 
-  $("#orderService").innerHTML = `
-    <option value="">Pilih jasa</option>
+    return;
+  }
+
+  serviceList.innerHTML = state.services.map((service, index) => {
+    const title = service.title || "Layanan";
+
+    return `
+      <article class="service-card">
+        <div class="service-number">
+          ${String(index + 1).padStart(2, "0")}
+        </div>
+
+        <div class="service-main">
+          <div>
+            <h3>${escapeHTML(title)}</h3>
+
+            <p>
+              ${escapeHTML(service.description || "")}
+            </p>
+          </div>
+        </div>
+
+        <div class="service-meta">
+          <span>Mulai dari</span>
+          <strong>${formatPrice(service.price_start)}</strong>
+        </div>
+
+        <button
+          class="service-select"
+          type="button"
+          data-service="${escapeHTML(title)}"
+          aria-label="Pilih ${escapeHTML(title)}"
+        >
+          ↗
+        </button>
+      </article>
+    `;
+  }).join("");
+}
+
+function populateServiceSelect() {
+  const select = $("#order-service");
+
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = `
+    <option value="">Pilih layanan</option>
+
     ${state.services.map((service) => `
-      <option value="${service.id}">
-        ${escapeHTML(service.title)}
+      <option value="${escapeHTML(service.title || "")}">
+        ${escapeHTML(service.title || "")}
       </option>
     `).join("")}
   `;
 }
 
-function bindEvents() {
-  $("#menuButton").addEventListener("click", () => {
-    $("#mainNav").classList.toggle("open");
-  });
+/* =========================================================
+   UI EVENTS
+========================================================= */
 
-  $("#loginButton").addEventListener("click", () => {
-    $("#authDialog").showModal();
-  });
-
-  $("#googleLogin").addEventListener("click", loginWithGoogle);
-  $("#authForm").addEventListener("submit", handleEmailAuth);
-
-  $("#toggleAuthMode").addEventListener("click", () => {
-    state.authMode = state.authMode === "login" ? "register" : "login";
-
-    $("#emailLogin").textContent =
-      state.authMode === "login" ? "Masuk" : "Buat akun";
-
-    $("#toggleAuthMode").textContent =
-      state.authMode === "login"
-        ? "Belum punya akun? Daftar"
-        : "Sudah punya akun? Masuk";
-  });
-
-  $$("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => {
-      button.closest("dialog").close();
+function bindUIEvents() {
+  [
+    "#open-order-button",
+    "#hero-order-button",
+    "#contact-order-button"
+  ].forEach((selector) => {
+    $(selector)?.addEventListener("click", () => {
+      openLayer("#order-panel");
     });
   });
 
-  $$("[data-open-order]").forEach((button) => {
-    button.addEventListener("click", openOrderDrawer);
+  $("#close-order-button")?.addEventListener("click", closeLayers);
+  $("#close-auth-button")?.addEventListener("click", closeLayers);
+  $("#close-chat-button")?.addEventListener("click", closeLayers);
+
+  [
+    "#open-chat-button",
+    "#contact-chat-button"
+  ].forEach((selector) => {
+    $(selector)?.addEventListener("click", openChat);
   });
 
-  $("#closeOrder").addEventListener("click", closeOrderDrawer);
-  $("#orderOverlay").addEventListener("click", closeOrderDrawer);
-  $("#orderForm").addEventListener("submit", submitOrder);
+  $("#page-overlay")?.addEventListener("click", closeLayers);
 
-  $("#openChatButton").addEventListener("click", openChat);
-  $("#closeChat").addEventListener("click", closeChat);
-  $("#chatForm").addEventListener("submit", sendMessage);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeLayers();
+    }
+  });
 
-  $("#projectGrid").addEventListener("click", handleProjectGridClick);
-  $("#serviceGrid").addEventListener("click", handleServiceClick);
-  $("#projectFilters").addEventListener("click", filterProjects);
+  bindProjectFilters();
+  bindServiceSelection();
+  bindProjectPreview();
 
-  $("#accountButton").addEventListener("click", handleAccountButton);
-  $("#newProjectButton").addEventListener("click", openProjectDialog);
-  $("#projectForm").addEventListener("submit", saveProject);
-  $("#closeAdmin").addEventListener("click", closeAdmin);
+  $("#order-form")?.addEventListener("submit", submitOrder);
+  $("#email-login-form")?.addEventListener("submit", handleEmailLogin);
+  $("#google-login-button")?.addEventListener("click", loginWithGoogle);
+  $("#chat-form")?.addEventListener("submit", sendMessage);
 
-  $$(".admin-nav[data-admin-tab]").forEach((button) => {
+  $("#register-button")?.addEventListener("click", handleRegister);
+}
+
+function bindProjectFilters() {
+  $$(".filter-button").forEach((button) => {
     button.addEventListener("click", () => {
-      openAdminTab(button.dataset.adminTab);
+      $$(".filter-button").forEach((item) => {
+        item.classList.remove("active");
+      });
+
+      button.classList.add("active");
+
+      filterProjects(button.dataset.filter || "all");
     });
   });
+}
 
-  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-    state.user = session?.user || null;
-    state.profile = null;
+function bindServiceSelection() {
+  $("#service-list")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-service]");
 
-    if (state.user) await loadProfile();
-    updateAccountUI();
+    if (!button) {
+      return;
+    }
+
+    const select = $("#order-service");
+
+    if (select) {
+      select.value = button.dataset.service || "";
+    }
+
+    openLayer("#order-panel");
   });
+}
+
+function bindProjectPreview() {
+  $("#project-grid")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-preview-url]");
+
+    if (!button) {
+      return;
+    }
+
+    const url = button.dataset.previewUrl;
+    const title = button.dataset.previewTitle || "Preview Project";
+
+    if (!url) {
+      return;
+    }
+
+    const dialog = $("#preview-dialog");
+    const titleElement = $("#preview-title");
+    const frame = $("#project-frame");
+    const link = $("#open-project-link");
+
+    if (titleElement) {
+      titleElement.textContent = title;
+    }
+
+    if (frame) {
+      frame.src = url;
+    }
+
+    if (link) {
+      link.href = url;
+    }
+
+    if (dialog?.showModal) {
+      dialog.showModal();
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  });
+
+  $("#close-preview-button")?.addEventListener("click", () => {
+    const dialog = $("#preview-dialog");
+
+    if (dialog?.open) {
+      dialog.close();
+    }
+  });
+}
+
+/* =========================================================
+   LAYERS / MODALS
+========================================================= */
+
+function openLayer(selectorOrElement) {
+  const element = typeof selectorOrElement === "string"
+    ? $(selectorOrElement)
+    : selectorOrElement;
+
+  if (!element) {
+    return;
+  }
+
+  const overlay = $("#page-overlay");
+
+  element.classList.add("is-open");
+  element.setAttribute("aria-hidden", "false");
+
+  if (overlay) {
+    overlay.hidden = false;
+
+    requestAnimationFrame(() => {
+      overlay.classList.add("is-visible");
+    });
+  }
+
+  document.body.classList.add("no-scroll");
+}
+
+function closeLayers() {
+  [
+    "#order-panel",
+    "#auth-modal",
+    "#chat-panel"
+  ].forEach((selector) => {
+    const element = $(selector);
+
+    if (!element) {
+      return;
+    }
+
+    element.classList.remove("is-open");
+    element.setAttribute("aria-hidden", "true");
+  });
+
+  const overlay = $("#page-overlay");
+
+  if (overlay) {
+    overlay.classList.remove("is-visible");
+
+    window.setTimeout(() => {
+      overlay.hidden = true;
+    }, 250);
+  }
+
+  document.body.classList.remove("no-scroll");
+}
+
+/* =========================================================
+   MOBILE MENU
+========================================================= */
+
+function bindMobileMenu() {
+  const menuButton = $("#menu-button");
+  const mobileMenu = $("#mobile-menu");
+
+  if (!menuButton || !mobileMenu) {
+    return;
+  }
+
+  menuButton.addEventListener("click", () => {
+    const isOpen =
+      menuButton.getAttribute("aria-expanded") === "true";
+
+    menuButton.setAttribute("aria-expanded", String(!isOpen));
+    mobileMenu.hidden = isOpen;
+    mobileMenu.classList.toggle("is-open", !isOpen);
+  });
+
+  $$("#mobile-menu a").forEach((link) => {
+    link.addEventListener("click", closeMobileMenu);
+  });
+
+  $(".mobile-order-button")?.addEventListener("click", () => {
+    closeMobileMenu();
+    openLayer("#order-panel");
+  });
+}
+
+function closeMobileMenu() {
+  const menuButton = $("#menu-button");
+  const mobileMenu = $("#mobile-menu");
+
+  if (!menuButton || !mobileMenu) {
+    return;
+  }
+
+  menuButton.setAttribute("aria-expanded", "false");
+  mobileMenu.hidden = true;
+  mobileMenu.classList.remove("is-open");
+}
+
+/* =========================================================
+   AUTHENTICATION
+========================================================= */
+
+async function handleEmailLogin(event) {
+  event.preventDefault();
+
+  const email = $("#auth-email")?.value.trim();
+  const password = $("#auth-password")?.value;
+
+  if (!email || !password) {
+    showToast("Email dan password wajib diisi.", "error");
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (error) {
+    showToast(error.message, "error");
+    return;
+  }
+
+  closeLayers();
+  showToast("Berhasil masuk.");
 }
 
 async function loginWithGoogle() {
@@ -279,129 +695,163 @@ async function loginWithGoogle() {
     }
   });
 
-  if (error) toast(error.message, "error");
+  if (error) {
+    showToast(error.message, "error");
+  }
 }
 
-async function handleEmailAuth(event) {
-  event.preventDefault();
+async function handleRegister() {
+  const email = $("#auth-email")?.value.trim();
+  const password = $("#auth-password")?.value;
 
-  const email = $("#authEmail").value.trim();
-  const password = $("#authPassword").value;
-  const fullName = $("#authName").value.trim();
+  if (!email || !password) {
+    showToast(
+      "Isi email dan password terlebih dahulu untuk mendaftar.",
+      "error"
+    );
 
-  let result;
-
-  if (state.authMode === "register") {
-    result = await supabaseClient.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName }
-      }
-    });
-  } else {
-    result = await supabaseClient.auth.signInWithPassword({
-      email,
-      password
-    });
-  }
-
-  if (result.error) {
-    toast(result.error.message, "error");
     return;
   }
 
-  $("#authDialog").close();
+  const { error } = await supabaseClient.auth.signUp({
+    email,
+    password
+  });
 
-  toast(
-    state.authMode === "register"
-      ? "Akun dibuat. Periksa email apabila verifikasi diaktifkan."
-      : "Berhasil masuk."
+  if (error) {
+    showToast(error.message, "error");
+    return;
+  }
+
+  showToast(
+    "Pendaftaran berhasil. Periksa email untuk konfirmasi akun."
   );
 }
 
-function updateAccountUI() {
+async function logoutUser() {
+  const confirmed = window.confirm("Keluar dari akun?");
+
+  if (!confirmed) {
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signOut();
+
+  if (error) {
+    showToast(error.message, "error");
+    return;
+  }
+
+  state.user = null;
+  state.profile = null;
+  state.conversationId = null;
+
+  if (state.realtimeChannel) {
+    await supabaseClient.removeChannel(state.realtimeChannel);
+    state.realtimeChannel = null;
+  }
+
+  closeLayers();
+  updateAccountUI();
+
+  showToast("Berhasil keluar.");
+}
+
+async function loadProfile() {
   if (!state.user) {
-    $("#loginButton").classList.remove("hidden");
-    $("#accountButton").classList.add("hidden");
     return;
   }
 
-  $("#loginButton").classList.add("hidden");
-  $("#accountButton").classList.remove("hidden");
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("*")
+    .eq("id", state.user.id)
+    .maybeSingle();
 
-  const name = state.profile?.full_name || state.user.email;
-  $("#accountButton").textContent = name.charAt(0).toUpperCase();
-
-  $("#customerName").value = state.profile?.full_name || "";
-  $("#customerEmail").value = state.user.email || "";
-}
-
-async function handleAccountButton() {
-  if (state.profile?.role === "admin") {
-    openAdmin();
+  if (error) {
+    console.error("Gagal memuat profile:", error);
     return;
   }
 
-  const shouldLogout = confirm("Keluar dari akun?");
-  if (shouldLogout) await supabaseClient.auth.signOut();
+  state.profile = data || null;
 }
 
-function openOrderDrawer() {
-  $("#orderDrawer").classList.add("open");
-  $("#orderOverlay").classList.add("open");
+function updateAccountUI() {
+  const loginButton = $("#open-auth-button");
+  const footerLoginButton = $("#footer-login-button");
+
+  if (state.user) {
+    if (loginButton) {
+      loginButton.innerHTML = `
+        <span>Keluar</span>
+      `;
+
+      loginButton.onclick = logoutUser;
+    }
+
+    if (footerLoginButton) {
+      footerLoginButton.textContent = "Keluar";
+      footerLoginButton.onclick = logoutUser;
+    }
+
+    return;
+  }
+
+  if (loginButton) {
+    loginButton.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0"/>
+      </svg>
+
+      <span>Masuk</span>
+    `;
+
+    loginButton.onclick = () => {
+      openLayer("#auth-modal");
+    };
+  }
+
+  if (footerLoginButton) {
+    footerLoginButton.textContent = "Masuk";
+
+    footerLoginButton.onclick = () => {
+      openLayer("#auth-modal");
+    };
+  }
 }
 
-function closeOrderDrawer() {
-  $("#orderDrawer").classList.remove("open");
-  $("#orderOverlay").classList.remove("open");
-}
-
-function handleServiceClick(event) {
-  const button = event.target.closest(".choose-service");
-  if (!button) return;
-
-  $("#orderService").value = button.dataset.service;
-  openOrderDrawer();
-}
+/* =========================================================
+   ORDER
+========================================================= */
 
 async function submitOrder(event) {
   event.preventDefault();
 
-  let attachmentUrl = null;
-  const attachment = $("#orderAttachment").files[0];
+  const name = $("#order-name")?.value.trim();
+  const email = $("#order-email")?.value.trim();
+  const service = $("#order-service")?.value;
+  const budget = $("#order-budget")?.value;
+  const deadline = $("#order-deadline")?.value || null;
+  const message = $("#order-message")?.value.trim();
 
-  if (attachment) {
-    if (!state.user) {
-      toast("Masuk terlebih dahulu untuk mengunggah lampiran.", "error");
-      return;
-    }
-
-    const safeName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `${state.user.id}/${crypto.randomUUID()}-${safeName}`;
-
-    const { error: uploadError } = await supabaseClient.storage
-      .from("attachments")
-      .upload(path, attachment);
-
-    if (uploadError) {
-      toast(uploadError.message, "error");
-      return;
-    }
-
-    attachmentUrl = path;
+  if (!name || !email || !service || !budget || !message) {
+    showToast("Lengkapi semua data yang wajib diisi.", "error");
+    return;
   }
+
+  const serviceData = state.services.find((item) => {
+    return item.title === service;
+  });
 
   const payload = {
     user_id: state.user?.id || null,
-    service_id: $("#orderService").value || null,
-    customer_name: $("#customerName").value.trim(),
-    customer_email: $("#customerEmail").value.trim(),
-    whatsapp: $("#customerWhatsapp").value.trim() || null,
-    budget: $("#customerBudget").value,
-    deadline: $("#customerDeadline").value || null,
-    description: $("#orderDescription").value.trim(),
-    attachment_url: attachmentUrl
+    service_id: serviceData?.id || null,
+    customer_name: name,
+    customer_email: email,
+    budget,
+    deadline,
+    description: message,
+    status: "pending"
   };
 
   const { error } = await supabaseClient
@@ -409,127 +859,147 @@ async function submitOrder(event) {
     .insert(payload);
 
   if (error) {
-    toast(error.message, "error");
+    console.error("Gagal mengirim order:", error);
+    showToast(error.message, "error");
     return;
   }
 
-  event.target.reset();
-  closeOrderDrawer();
-  toast("Permintaan berhasil dikirim.");
+  $("#order-form")?.reset();
+
+  closeLayers();
+
+  showToast("Permintaan proyek berhasil dikirim.");
 }
 
-function filterProjects(event) {
-  const button = event.target.closest("[data-category]");
-  if (!button) return;
-
-  $$(".filter").forEach((item) => item.classList.remove("active"));
-  button.classList.add("active");
-
-  const category = button.dataset.category;
-
-  renderProjects(
-    category === "all"
-      ? state.projects
-      : state.projects.filter((project) => project.category === category)
-  );
-}
-
-function handleProjectGridClick(event) {
-  const button = event.target.closest("[data-preview-url]");
-  if (!button) return;
-
-  const url = button.dataset.previewUrl;
-  $("#previewTitle").textContent = button.dataset.previewTitle;
-  $("#projectFrame").src = url;
-  $("#openProjectLink").href = url;
-  $("#previewDialog").showModal();
-}
+/* =========================================================
+   CHAT
+========================================================= */
 
 async function openChat() {
   if (!state.user) {
-    $("#authDialog").showModal();
-    toast("Silakan masuk untuk menggunakan chat.", "error");
+    openLayer("#auth-modal");
+    showToast("Silakan masuk terlebih dahulu.", "error");
     return;
   }
 
-  $("#chatPanel").classList.add("open");
+  openLayer("#chat-panel");
+
   await getOrCreateConversation();
 }
 
-function closeChat() {
-  $("#chatPanel").classList.remove("open");
-}
-
 async function getOrCreateConversation() {
-  let { data: conversation } = await supabaseClient
+  if (!state.user) {
+    return;
+  }
+
+  let { data: conversation, error } = await supabaseClient
     .from("conversations")
     .select("*")
     .eq("user_id", state.user.id)
     .maybeSingle();
 
+  if (error) {
+    console.error("Gagal mengambil conversation:", error);
+    showToast(error.message, "error");
+    return;
+  }
+
   if (!conversation) {
-    const { data, error } = await supabaseClient
+    const result = await supabaseClient
       .from("conversations")
       .insert({
         user_id: state.user.id,
-        subject: "Konsultasi website"
+        subject: "Konsultasi website",
+        status: "open"
       })
       .select()
       .single();
 
-    if (error) {
-      toast(error.message, "error");
+    if (result.error) {
+      console.error(
+        "Gagal membuat conversation:",
+        result.error
+      );
+
+      showToast(result.error.message, "error");
       return;
     }
 
-    conversation = data;
+    conversation = result.data;
   }
 
   state.conversationId = conversation.id;
+
   await loadMessages();
-  subscribeMessages();
+  subscribeToMessages();
 }
 
 async function loadMessages() {
+  if (!state.conversationId) {
+    return;
+  }
+
   const { data, error } = await supabaseClient
     .from("messages")
     .select("*")
     .eq("conversation_id", state.conversationId)
-    .order("created_at");
+    .order("created_at", { ascending: true });
 
-  if (error) return;
+  if (error) {
+    console.error("Gagal memuat pesan:", error);
+    return;
+  }
+
   renderMessages(data || []);
 }
 
-function renderMessages(messages) {
-  $("#chatMessages").innerHTML = messages.length
-    ? messages.map((message) => `
-        <div class="message ${
-          message.sender_id === state.user.id ? "mine" : "theirs"
-        }">
-          ${escapeHTML(message.message)}
-          <small>
-            ${new Date(message.created_at).toLocaleTimeString("id-ID", {
-              hour: "2-digit",
-              minute: "2-digit"
-            })}
-          </small>
-        </div>
-      `).join("")
-    : `<p class="chat-information">
-         Halo! Silakan ceritakan kebutuhan proyekmu.
-       </p>`;
+function renderMessages(messages = []) {
+  const container = $("#chat-messages");
 
-  $("#chatMessages").scrollTop = $("#chatMessages").scrollHeight;
+  if (!container) {
+    return;
+  }
+
+  if (!messages.length) {
+    container.innerHTML = `
+      <div class="chat-empty">
+        Belum ada pesan. Silakan tulis pesanmu.
+      </div>
+    `;
+
+    return;
+  }
+
+  container.innerHTML = messages.map((message) => {
+    const isSent = message.sender_id === state.user?.id;
+
+    return `
+      <div class="message ${
+        isSent ? "message-sent" : "message-received"
+      }">
+        <p>${escapeHTML(message.message || "")}</p>
+
+        <span>
+          ${formatTime(message.created_at)}
+        </span>
+      </div>
+    `;
+  }).join("");
+
+  container.scrollTop = container.scrollHeight;
 }
 
-function subscribeMessages() {
+function subscribeToMessages() {
+  if (!state.conversationId) {
+    return;
+  }
+
   if (state.realtimeChannel) {
     supabaseClient.removeChannel(state.realtimeChannel);
   }
 
   state.realtimeChannel = supabaseClient
-    .channel(`chat-${state.conversationId}`)
+    .channel(`conversation-${state.conversationId}`)
     .on(
       "postgres_changes",
       {
@@ -538,7 +1008,9 @@ function subscribeMessages() {
         table: "messages",
         filter: `conversation_id=eq.${state.conversationId}`
       },
-      loadMessages
+      async () => {
+        await loadMessages();
+      }
     )
     .subscribe();
 }
@@ -546,8 +1018,26 @@ function subscribeMessages() {
 async function sendMessage(event) {
   event.preventDefault();
 
-  const message = $("#chatInput").value.trim();
-  if (!message || !state.conversationId) return;
+  if (!state.user) {
+    showToast("Silakan masuk terlebih dahulu.", "error");
+    return;
+  }
+
+  const input = $("#chat-input");
+  const message = input?.value.trim();
+
+  if (!message) {
+    return;
+  }
+
+  if (!state.conversationId) {
+    await getOrCreateConversation();
+  }
+
+  if (!state.conversationId) {
+    showToast("Conversation belum tersedia.", "error");
+    return;
+  }
 
   const { error } = await supabaseClient
     .from("messages")
@@ -558,249 +1048,22 @@ async function sendMessage(event) {
     });
 
   if (error) {
-    toast(error.message, "error");
+    console.error("Gagal mengirim pesan:", error);
+    showToast(error.message, "error");
     return;
   }
 
-  $("#chatInput").value = "";
-}
+  input.value = "";
 
-function openAdmin() {
-  if (state.profile?.role !== "admin") return;
-
-  $("#adminPanel").classList.remove("hidden");
-  document.body.classList.add("admin-open");
-  openAdminTab("projects");
-}
-
-function closeAdmin() {
-  $("#adminPanel").classList.add("hidden");
-  document.body.classList.remove("admin-open");
-}
-
-async function openAdminTab(tab) {
-  $$(".admin-nav").forEach((button) => button.classList.remove("active"));
-  $(`[data-admin-tab="${tab}"]`)?.classList.add("active");
-
-  $("#adminProjects").classList.toggle("hidden", tab !== "projects");
-  $("#adminOrders").classList.toggle("hidden", tab !== "orders");
-  $("#adminChats").classList.toggle("hidden", tab !== "chats");
-  $("#newProjectButton").classList.toggle("hidden", tab !== "projects");
-
-  if (tab === "projects") await renderAdminProjects();
-  if (tab === "orders") await renderAdminOrders();
-  if (tab === "chats") await renderAdminChats();
-}
-
-async function renderAdminProjects() {
-  const { data, error } = await supabaseClient
-    .from("projects")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) return;
-
-  $("#adminProjects").innerHTML = `
-    <div class="admin-list">
-      ${data.map((project) => `
-        <article>
-          <div>
-            <span>${escapeHTML(project.category)}</span>
-            <h3>${escapeHTML(project.title)}</h3>
-            <small>${project.published ? "Dipublikasikan" : "Draft"}</small>
-          </div>
-
-          <button
-            class="button button-secondary"
-            onclick="editProject('${project.id}')"
-          >
-            Edit
-          </button>
-
-          <button
-            class="danger-button"
-            onclick="deleteProject('${project.id}')"
-          >
-            Hapus
-          </button>
-        </article>
-      `).join("")}
-    </div>
-  `;
-}
-
-function openProjectDialog() {
-  $("#projectForm").reset();
-  $("#projectId").value = "";
-  $("#projectPublished").checked = true;
-  $("#projectDialog").showModal();
-}
-
-window.editProject = async function (id) {
-  const { data, error } = await supabaseClient
-    .from("projects")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (error) return;
-
-  $("#projectId").value = data.id;
-  $("#projectTitle").value = data.title;
-  $("#projectCategory").value = data.category;
-  $("#projectDescription").value = data.description || "";
-  $("#projectTools").value = (data.tools || []).join(", ");
-  $("#projectUrl").value = data.project_url || "";
-  $("#projectFeatured").checked = data.featured;
-  $("#projectPublished").checked = data.published;
-  $("#projectDialog").showModal();
-};
-
-async function saveProject(event) {
-  event.preventDefault();
-
-  const id = $("#projectId").value;
-  const image = $("#projectImage").files[0];
-  let imageUrl;
-
-  if (image) {
-    const safeName = image.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `${crypto.randomUUID()}-${safeName}`;
-
-    const { error: uploadError } = await supabaseClient.storage
-      .from("portfolio")
-      .upload(path, image);
-
-    if (uploadError) {
-      toast(uploadError.message, "error");
-      return;
-    }
-
-    const { data } = supabaseClient.storage
-      .from("portfolio")
-      .getPublicUrl(path);
-
-    imageUrl = data.publicUrl;
-  }
-
-  const title = $("#projectTitle").value.trim();
-
-  const payload = {
-    title,
-    slug: `${title.toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")}-${Date.now()}`,
-    category: $("#projectCategory").value.trim(),
-    description: $("#projectDescription").value.trim(),
-    tools: $("#projectTools").value
-      .split(",")
-      .map((tool) => tool.trim())
-      .filter(Boolean),
-    project_url: $("#projectUrl").value.trim() || null,
-    featured: $("#projectFeatured").checked,
-    published: $("#projectPublished").checked,
-    created_by: state.user.id
-  };
-
-  if (imageUrl) payload.image_url = imageUrl;
-
-  const query = id
-    ? supabaseClient.from("projects").update(payload).eq("id", id)
-    : supabaseClient.from("projects").insert(payload);
-
-  const { error } = await query;
-
-  if (error) {
-    toast(error.message, "error");
-    return;
-  }
-
-  $("#projectDialog").close();
-  toast("Portofolio berhasil disimpan.");
-  await loadProjects();
-  await renderAdminProjects();
-}
-
-window.deleteProject = async function (id) {
-  if (!confirm("Hapus portofolio ini?")) return;
-
-  const { error } = await supabaseClient
-    .from("projects")
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    toast(error.message, "error");
-    return;
-  }
-
-  toast("Portofolio dihapus.");
-  await loadProjects();
-  await renderAdminProjects();
-};
-
-async function renderAdminOrders() {
-  const { data, error } = await supabaseClient
-    .from("orders")
-    .select("*, services(title)")
-    .order("created_at", { ascending: false });
-
-  if (error) return;
-
-  $("#adminOrders").innerHTML = `
-    <div class="admin-list">
-      ${data.map((order) => `
-        <article>
-          <div>
-            <span>${escapeHTML(order.services?.title || "Jasa lainnya")}</span>
-            <h3>${escapeHTML(order.customer_name)}</h3>
-            <p>${escapeHTML(order.description)}</p>
-            <small>
-              ${escapeHTML(order.customer_email)} •
-              ${escapeHTML(order.status)}
-            </small>
-          </div>
-        </article>
-      `).join("") || "<p>Belum ada pesanan.</p>"}
-    </div>
-  `;
-}
-
-async function renderAdminChats() {
-  const { data, error } = await supabaseClient
-    .from("conversations")
-    .select("*, profiles(full_name)")
-    .order("updated_at", { ascending: false });
-
-  if (error) return;
-
-  $("#adminChats").innerHTML = `
-    <div class="admin-list">
-      ${data.map((chat) => `
-        <article>
-          <div>
-            <span>Percakapan</span>
-            <h3>${escapeHTML(chat.profiles?.full_name || "Pengguna")}</h3>
-            <small>${escapeHTML(chat.status)}</small>
-          </div>
-
-          <button
-            class="button button-secondary"
-            onclick="openAdminConversation('${chat.id}')"
-          >
-            Buka chat
-          </button>
-        </article>
-      `).join("") || "<p>Belum ada percakapan.</p>"}
-    </div>
-  `;
-}
-
-window.openAdminConversation = async function (conversationId) {
-  state.conversationId = conversationId;
-  $("#chatPanel").classList.add("open");
   await loadMessages();
-  subscribeMessages();
-};
+}
 
-initialize();
+/* =========================================================
+   START APPLICATION
+========================================================= */
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeApp);
+} else {
+  initializeApp();
+}
