@@ -988,7 +988,7 @@
     </div>
 
     <div class="container footer-bottom">
-      <p>© <span id="current-year">2026</span> Wisen Vanayaka Gultom.</p>
+      <p>© <span id="currentYear">2026</span> Wisen Vanayaka Gultom.</p>
       <p>Dibangun dengan rasa ingin tahu di Indonesia.</p>
     </div>
   </footer>
@@ -1424,7 +1424,7 @@
         });
       });
 
-      const currentYear = document.getElementById("current-year");
+      const currentYear = document.getElementById("currentYear");
 
       if (currentYear) {
         currentYear.textContent = new Date().getFullYear();
@@ -1443,6 +1443,12 @@
         { passive: true }
       );
     });
-  </script>
+
+  
+  
+    </script>
+
+  <div id="toastContainer" class="toast-container"></div>
 </body>
 </html>
+
