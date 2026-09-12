@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta
+    name="description"
+    content="Admin Panel Wisen Portfolio"
+  >
+
+  <title>Admin Panel — Wisen Portfolio</title>
+
+  <!-- CSS utama agar variabel warna dan tombol tetap tersedia -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- CSS khusus admin -->
+  <link rel="stylesheet" href="admin.css">
+
+  <!-- Supabase -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+    defer
+  ></script>
+
+  <!-- Konfigurasi Supabase -->
+  <script src="config.js" defer></script>
+
+  <!-- Logic admin -->
+  <script src="admin.js" defer></script>
+</head>
+
+<body class="admin-page">
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="admin-header">
+    <div class="container admin-navigation">
+      <a class="brand" href="index.html">
+        <span class="brand-symbol" aria-hidden="true">W</span>
+
+        <span class="brand-copy">
+          <strong>Wisen.</strong>
+          <small>Admin Dashboard</small>
+        </span>
+      </a>
+
+      <div class="admin-header-actions">
+        <a
+          class="button button-ghost"
+          href="index.html"
+        >
+          ← Website
+        </a>
+
+        <button
+          class="button button-primary"
+          id="logout-button"
+          type="button"
+        >
+          Keluar
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-main">
+    <div class="container">
+
+      <!-- Loading -->
+      <section class="admin-loading" id="admin-loading">
+        <div class="loading-spinner"></div>
+        <p>Memeriksa akses admin...</p>
+      </section>
+
+      <!-- Konten admin -->
+      <section class="admin-content" id="admin-content" hidden>
+        <div class="admin-heading">
+          <div>
+            <p class="section-index">Admin workspace</p>
+            <h1>Dashboard.</h1>
+            <p class="admin-subtitle">
+              Kelola project, layanan, pesanan, dan pesan pengunjung.
+            </p>
+          </div>
+
+          <div class="admin-user-card">
+            <span class="admin-avatar">W</span>
+            <div>
+              <small>Login sebagai</small>
+              <strong id="admin-email">Admin</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Statistik -->
+        <div class="admin-stats">
+          <article class="admin-stat-card">
+            <span class="admin-stat-label">Projects</span>
+            <strong id="stat-projects">0</strong>
+            <small>Data project tersimpan</small>
+          </article>
+
+          <article class="admin-stat-card">
+            <span class="admin-stat-label">Services</span>
+            <strong id="stat-services">0</strong>
+            <small>Layanan tersedia</small>
+          </article>
+
+          <article class="admin-stat-card">
+            <span class="admin-stat-label">Orders</span>
+            <strong id="stat-orders">0</strong>
+            <small>Permintaan masuk</small>
+          </article>
+
+          <article class="admin-stat-card">
+            <span class="admin-stat-label">Messages</span>
+            <strong id="stat-messages">0</strong>
+            <small>Pesan tersimpan</small>
+          </article>
+        </div>
+
+        <!-- Navigasi tab -->
+        <div class="admin-tabs" role="tablist">
+          <button
+            class="admin-tab active"
+            type="button"
+            data-admin-tab="overview"
+          >
+            Overview
+          </button>
+
+          <button
+            class="admin-tab"
+            type="button"
+            data-admin-tab="projects"
+          >
+            Projects
+          </button>
+
+          <button
+            class="admin-tab"
+            type="button"
+            data-admin-tab="services"
+          >
+            Services
+          </button>
+
+          <button
+            class="admin-tab"
+            type="button"
+            data-admin-tab="orders"
+          >
+            Orders
+          </button>
+
+          <button
+            class="admin-tab"
+            type="button"
+            data-admin-tab="messages"
+          >
+            Messages
+          </button>
+        </div>
+
+        <!-- Overview -->
+        <section
+          class="admin-tab-panel active"
+          id="panel-overview"
+          data-panel="overview"
+        >
+          <div class="admin-panel-heading">
+            <div>
+              <p class="section-index">Overview</p>
+              <h2>Selamat datang di admin panel.</h2>
+            </div>
+          </div>
+
+          <div class="admin-overview-grid">
+            <article class="admin-info-card">
+              <span class="info-icon">01</span>
+              <h3>Projects</h3>
+              <p>
+                Kelola karya yang tampil di halaman utama portofolio.
+              </p>
+
+              <button
+                class="button button-secondary"
+                type="button"
+                data-go-tab="projects"
+              >
+                Kelola project
+              </button>
+            </article>
+
+            <article class="admin-info-card">
+              <span class="info-icon">02</span>
+              <h3>Services</h3>
+              <p>
+                Atur layanan yang dapat dipilih oleh calon klien.
+              </p>
+
+              <button
+                class="button button-secondary"
+                type="button"
+                data-go-tab="services"
+              >
+                Kelola layanan
+              </button>
+            </article>
+
+            <article class="admin-info-card">
+              <span class="info-icon">03</span>
+              <h3>Orders</h3>
+              <p>
+                Lihat permintaan proyek yang dikirim melalui website.
+              </p>
+
+              <button
+                class="button button-secondary"
+                type="button"
+                data-go-tab="orders"
+              >
+                Lihat pesanan
+              </button>
+            </article>
+
+            <article class="admin-info-card">
+              <span class="info-icon">04</span>
+              <h3>Messages</h3>
+              <p>
+                Baca pesan dari pengunjung dan calon klien.
+              </p>
+
+              <button
+                class="button button-secondary"
+                type="button"
+                data-go-tab="messages"
+              >
+                Lihat pesan
+              </button>
+            </article>
+          </div>
+        </section>
+
+        <!-- Projects -->
+        <section
+          class="admin-tab-panel"
+          id="panel-projects"
+          data-panel="projects"
+          hidden
+        >
+          <div class="admin-panel-heading panel-heading-row">
+            <div>
+              <p class="section-index">Content management</p>
+              <h2>Projects</h2>
+            </div>
+
+            <button
+              class="button button-primary"
+              id="refresh-projects"
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Judul</th>
+                  <th>Kategori</th>
+                  <th>Status</th>
+                  <th>Urutan</th>
+                </tr>
+              </thead>
+
+              <tbody id="projects-table-body">
+                <tr>
+                  <td colspan="4">Memuat project...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Services -->
+        <section
+          class="admin-tab-panel"
+          id="panel-services"
+          data-panel="services"
+          hidden
+        >
+          <div class="admin-panel-heading panel-heading-row">
+            <div>
+              <p class="section-index">Content management</p>
+              <h2>Services</h2>
+            </div>
+
+            <button
+              class="button button-primary"
+              id="refresh-services"
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Nama layanan</th>
+                  <th>Deskripsi</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+
+              <tbody id="services-table-body">
+                <tr>
+                  <td colspan="3">Memuat layanan...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Orders -->
+        <section
+          class="admin-tab-panel"
+          id="panel-orders"
+          data-panel="orders"
+          hidden
+        >
+          <div class="admin-panel-heading panel-heading-row">
+            <div>
+              <p class="section-index">Client inquiries</p>
+              <h2>Orders</h2>
+            </div>
+
+            <button
+              class="button button-primary"
+              id="refresh-orders"
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Email</th>
+                  <th>Layanan</th>
+                  <th>Status</th>
+                  <th>Tanggal</th>
+                </tr>
+              </thead>
+
+              <tbody id="orders-table-body">
+                <tr>
+                  <td colspan="5">Memuat pesanan...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Messages -->
+        <section
+          class="admin-tab-panel"
+          id="panel-messages"
+          data-panel="messages"
+          hidden
+        >
+          <div class="admin-panel-heading panel-heading-row">
+            <div>
+              <p class="section-index">Communication</p>
+              <h2>Messages</h2>
+            </div>
+
+            <button
+              class="button button-primary"
+              id="refresh-messages"
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Pengirim</th>
+                  <th>Pesan</th>
+                  <th>Tanggal</th>
+                </tr>
+              </thead>
+
+              <tbody id="messages-table-body">
+                <tr>
+                  <td colspan="3">Memuat pesan...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <p class="admin-status" id="admin-status"></p>
+      </section>
+    </div>
+  </main>
+
+  <div
+    class="toast-container"
+    id="toastContainer"
+    aria-live="polite"
+  ></div>
+</body>
+</html>
