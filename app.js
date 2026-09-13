@@ -780,6 +780,12 @@ function updateAccountUI() {
   const loginButton = $("#open-auth-button");
   const footerLoginButton = $("#footer-login-button");
 
+  const isAdmin = state.profile?.role === "admin";
+
+  document.querySelectorAll(".admin-nav-link").forEach((link) => {
+    link.hidden = !isAdmin;
+  });
+
   if (state.user) {
     if (loginButton) {
       loginButton.innerHTML = `
@@ -851,7 +857,7 @@ async function submitOrder(event) {
     budget,
     deadline,
     description: message,
-    status: "pending"
+    status: "new"
   };
 
   const { error } = await supabaseClient

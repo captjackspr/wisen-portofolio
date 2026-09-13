@@ -1717,6 +1717,57 @@ h3 {
   border-radius: 8px;
 }
 
+/* Toast */
+
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 400;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  width: min(calc(100% - 40px), 340px);
+}
+
+.toast {
+  padding: 14px 18px;
+
+  color: var(--text);
+  background: #0f1317;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow);
+
+  font-size: 0.82rem;
+  font-weight: 650;
+
+  animation: toast-in 220ms ease;
+}
+
+.toast.error {
+  border-left-color: var(--danger);
+}
+
+.toast.success {
+  border-left-color: var(--success);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Auth modal */
 
 .modal {

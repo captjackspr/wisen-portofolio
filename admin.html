@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Dashboard</title>
+  <meta name="robots" content="noindex, nofollow">
 
-  <link rel="stylesheet" href="./admin.css">
+  <title>Admin Panel — Wisen Vanayaka Gultom</title>
+
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
 
   <!-- Supabase harus dimuat lebih dahulu -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -16,95 +19,441 @@
   <!-- defer mempertahankan urutan eksekusi script -->
   <script src="./admin.js" defer></script>
 </head>
-<body>
-  <main class="admin-shell">
-    <header class="admin-header">
-      <div>
-        <p class="eyebrow">Dashboard</p>
-        <h1>Admin Panel</h1>
-      </div>
+<body class="admin-body">
 
-      <div class="header-actions">
-        <a href="index.html" class="button button-secondary">Website</a>
-        <button id="logoutButton" class="button button-danger">
-          Keluar
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="admin-topbar">
+    <div class="container">
+      <a class="brand" href="index.html" aria-label="Wisen, kembali ke website">
+        <span class="brand-symbol" aria-hidden="true">W</span>
+        <span class="brand-copy">
+          <strong>Wisen.</strong>
+          <small>Admin Panel</small>
+        </span>
+      </a>
+
+      <div class="admin-topbar-actions">
+        <div class="admin-account">
+          <strong id="adminName">Admin</strong>
+          <span id="adminEmail"></span>
+        </div>
+
+        <a href="index.html" class="button button-secondary">
+          <span>Lihat Website</span>
+        </a>
+
+        <button id="logoutButton" class="button button-ghost" type="button">
+          <span>Keluar</span>
         </button>
       </div>
-    </header>
+    </div>
+  </header>
+
+  <main class="container admin-shell">
 
     <div id="loadingState" class="state-card">
       Memuat dashboard...
     </div>
 
-    <div id="errorState" class="state-card error hidden">
+    <div id="errorState" class="state-card error" hidden>
       <h2>Gagal memuat admin panel</h2>
       <p id="errorMessage"></p>
-      <button id="retryButton" class="button button-primary">
+      <button id="retryButton" class="button button-primary" type="button">
         Coba Lagi
       </button>
     </div>
 
-    <section id="adminContent" class="hidden">
-      <div class="welcome-card">
-        <p>Selamat datang,</p>
-        <h2 id="adminName">Admin</h2>
-        <span id="adminEmail"></span>
-      </div>
+    <section id="adminContent" hidden>
 
-      <section class="stats-grid">
+      <!-- Stats -->
+      <section class="stat-grid">
         <article class="stat-card">
-          <span>Projects</span>
+          <span>Proyek</span>
           <strong id="statProjects">0</strong>
         </article>
 
         <article class="stat-card">
-          <span>Services</span>
+          <span>Jasa</span>
           <strong id="statServices">0</strong>
         </article>
 
         <article class="stat-card">
-          <span>Orders</span>
+          <span>Pesanan</span>
           <strong id="statOrders">0</strong>
         </article>
 
         <article class="stat-card">
-          <span>Messages</span>
+          <span>Pesan</span>
           <strong id="statMessages">0</strong>
         </article>
       </section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Recent activity</p>
-            <h2>Pesanan Terbaru</h2>
+      <!-- Tabs -->
+      <div class="filter-row admin-tabs" id="adminTabs" role="tablist">
+        <button class="filter-button active" type="button" data-tab="dashboard">Dashboard</button>
+        <button class="filter-button" type="button" data-tab="projects">Proyek</button>
+        <button class="filter-button" type="button" data-tab="services">Jasa</button>
+        <button class="filter-button" type="button" data-tab="orders">Pesanan</button>
+        <button class="filter-button" type="button" data-tab="messages">Pesan</button>
+      </div>
+
+      <!-- Dashboard tab: recent orders -->
+      <section class="tab-panel" data-tab-panel="dashboard">
+        <div class="data-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Aktivitas terbaru</p>
+              <h2>Pesanan Terbaru</h2>
+            </div>
+
+            <button id="refreshDashboardButton" class="button button-secondary" type="button">
+              Refresh
+            </button>
           </div>
 
-          <button id="refreshButton" class="button button-secondary">
-            Refresh
-          </button>
-        </div>
-
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Nama</th>
-                <th>Email</th>
-                <th>Layanan</th>
-                <th>Status</th>
-                <th>Tanggal</th>
-              </tr>
-            </thead>
-            <tbody id="ordersTableBody">
-              <tr>
-                <td colspan="5">Belum ada data.</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Layanan</th>
+                  <th>Status</th>
+                  <th>Tanggal</th>
+                </tr>
+              </thead>
+              <tbody id="recentOrdersBody">
+                <tr class="empty-row">
+                  <td colspan="4">Memuat data...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
+
+      <!-- Projects tab -->
+      <section class="tab-panel" data-tab-panel="projects" hidden>
+        <div class="data-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Portofolio</p>
+              <h2>Kelola Proyek</h2>
+            </div>
+
+            <button id="addProjectButton" class="button button-primary" type="button">
+              + Tambah Proyek
+            </button>
+          </div>
+
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Judul</th>
+                  <th>Kategori</th>
+                  <th>Status</th>
+                  <th>Unggulan</th>
+                  <th>Urutan</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="projectsTableBody">
+                <tr class="empty-row">
+                  <td colspan="7">Memuat data...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Services tab -->
+      <section class="tab-panel" data-tab-panel="services" hidden>
+        <div class="data-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Daftar jasa</p>
+              <h2>Kelola Jasa</h2>
+            </div>
+
+            <button id="addServiceButton" class="button button-primary" type="button">
+              + Tambah Jasa
+            </button>
+          </div>
+
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Judul</th>
+                  <th>Mulai dari</th>
+                  <th>Estimasi</th>
+                  <th>Status</th>
+                  <th>Urutan</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="servicesTableBody">
+                <tr class="empty-row">
+                  <td colspan="6">Memuat data...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Orders tab -->
+      <section class="tab-panel" data-tab-panel="orders" hidden>
+        <div class="data-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Permintaan jasa</p>
+              <h2>Semua Pesanan</h2>
+            </div>
+
+            <button id="refreshOrdersButton" class="button button-secondary" type="button">
+              Refresh
+            </button>
+          </div>
+
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>Layanan</th>
+                  <th>Budget</th>
+                  <th>Deadline</th>
+                  <th>Status</th>
+                  <th>Tanggal</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody id="ordersTableBody">
+                <tr class="empty-row">
+                  <td colspan="7">Memuat data...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Messages tab -->
+      <section class="tab-panel" data-tab-panel="messages" hidden>
+        <div class="data-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Percakapan</p>
+              <h2>Pesan Masuk</h2>
+            </div>
+          </div>
+
+          <div class="messages-layout">
+            <div class="conversation-list" id="conversationList">
+              <p style="padding: 20px; color: var(--muted); font-size: 0.8rem;">
+                Memuat percakapan...
+              </p>
+            </div>
+
+            <div class="thread-column">
+              <div class="thread-messages" id="threadMessages">
+                <div class="thread-empty">Pilih percakapan di sebelah kiri.</div>
+              </div>
+
+              <form class="thread-form" id="threadForm" hidden>
+                <label class="sr-only" for="threadInput">Balas pesan</label>
+                <textarea
+                  id="threadInput"
+                  rows="1"
+                  placeholder="Tulis balasan..."
+                  required
+                ></textarea>
+
+                <button class="button button-primary" type="submit">Kirim</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </section>
   </main>
+
+  <!-- Overlay dipakai bersama oleh side-panel & modal -->
+  <div class="page-overlay" id="adminOverlay"></div>
+
+  <!-- Side-panel: form Proyek -->
+  <aside class="side-panel" id="project-panel" aria-hidden="true">
+    <div class="panel-header">
+      <div>
+        <span class="panel-label">Portofolio</span>
+        <h2 id="projectPanelTitle">Tambah Proyek</h2>
+      </div>
+
+      <button class="close-button" type="button" data-close-panel="project-panel" aria-label="Tutup">
+        &times;
+      </button>
+    </div>
+
+    <form class="order-form" id="projectForm">
+      <input type="hidden" id="projectId" value="">
+
+      <div class="form-row">
+        <label for="projectTitle">Judul proyek</label>
+        <input type="text" id="projectTitle" required placeholder="cth. Landing Page Toko Kopi">
+      </div>
+
+      <div class="form-grid-2">
+        <div class="form-row">
+          <label for="projectCategory">Kategori</label>
+          <input type="text" id="projectCategory" placeholder="Data Entry" required>
+        </div>
+
+        <div class="form-row">
+          <label for="projectSortOrder">Urutan tampil</label>
+          <input type="number" id="projectSortOrder" value="0">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="projectClient">Nama klien (opsional)</label>
+        <input type="text" id="projectClient" placeholder="cth. PT Kopi Nusantara">
+      </div>
+
+      <div class="form-row">
+        <label for="projectUrl">Link proyek (opsional)</label>
+        <input type="url" id="projectUrl" placeholder="https://...">
+      </div>
+
+      <div class="form-row">
+        <label for="projectDescription">Deskripsi</label>
+        <textarea id="projectDescription" placeholder="Ceritakan proyek ini secara singkat."></textarea>
+      </div>
+
+      <div class="form-row">
+        <label for="projectTools">Tools / teknologi (pisahkan dengan koma)</label>
+        <input type="text" id="projectTools" placeholder="HTML, CSS, Supabase">
+      </div>
+
+      <div class="form-row">
+        <label for="projectImage">Gambar sampul</label>
+        <input type="file" id="projectImage" accept="image/*">
+        <p class="field-hint">Diunggah ke bucket <code>portfolio</code>. Kosongkan jika tidak ingin mengganti.</p>
+        <div class="image-preview" id="projectImagePreview" hidden>
+          <img id="projectImagePreviewImg" alt="Pratinjau gambar proyek">
+        </div>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="projectFeatured">
+        <label for="projectFeatured">Tandai sebagai unggulan</label>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="projectPublished" checked>
+        <label for="projectPublished">Terbitkan (tampil di website)</label>
+      </div>
+
+      <p class="form-status" id="projectFormStatus"></p>
+
+      <div class="panel-footer-actions">
+        <button type="button" class="button button-secondary" data-close-panel="project-panel">
+          Batal
+        </button>
+        <button type="submit" class="button button-primary submit-button" id="projectSubmitButton">
+          Simpan Proyek
+        </button>
+      </div>
+    </form>
+  </aside>
+
+  <!-- Side-panel: form Jasa -->
+  <aside class="side-panel" id="service-panel" aria-hidden="true">
+    <div class="panel-header">
+      <div>
+        <span class="panel-label">Layanan</span>
+        <h2 id="servicePanelTitle">Tambah Jasa</h2>
+      </div>
+
+      <button class="close-button" type="button" data-close-panel="service-panel" aria-label="Tutup">
+        &times;
+      </button>
+    </div>
+
+    <form class="order-form" id="serviceForm">
+      <input type="hidden" id="serviceId" value="">
+
+      <div class="form-row">
+        <label for="serviceTitle">Nama jasa</label>
+        <input type="text" id="serviceTitle" required placeholder="cth. Input Data Excel">
+      </div>
+
+      <div class="form-row">
+        <label for="serviceDescription">Deskripsi</label>
+        <textarea id="serviceDescription" placeholder="Jelaskan cakupan jasa ini."></textarea>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="form-row">
+          <label for="servicePrice">Harga mulai dari (Rp)</label>
+          <input type="number" id="servicePrice" min="0" step="1000">
+        </div>
+
+        <div class="form-row">
+          <label for="serviceDelivery">Estimasi (hari)</label>
+          <input type="number" id="serviceDelivery" min="0">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="serviceIcon">Nama ikon</label>
+        <input type="text" id="serviceIcon" placeholder="briefcase">
+      </div>
+
+      <div class="form-row">
+        <label for="serviceSortOrder">Urutan tampil</label>
+        <input type="number" id="serviceSortOrder" value="0">
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="serviceActive" checked>
+        <label for="serviceActive">Aktif (tampil di website)</label>
+      </div>
+
+      <p class="form-status" id="serviceFormStatus"></p>
+
+      <div class="panel-footer-actions">
+        <button type="button" class="button button-secondary" data-close-panel="service-panel">
+          Batal
+        </button>
+        <button type="submit" class="button button-primary submit-button" id="serviceSubmitButton">
+          Simpan Jasa
+        </button>
+      </div>
+    </form>
+  </aside>
+
+  <!-- Modal: detail pesanan -->
+  <div class="modal" id="order-modal" role="dialog" aria-modal="true">
+    <button class="close-button modal-close" type="button" data-close-modal="order-modal" aria-label="Tutup">
+      &times;
+    </button>
+
+    <div class="auth-heading order-modal-heading">
+      <span class="panel-label">Pesanan</span>
+      <h2 id="orderModalName">Detail Pesanan</h2>
+    </div>
+
+    <div id="orderModalBody" class="order-detail-grid">
+      <!-- diisi oleh admin.js -->
+    </div>
+  </div>
+
 </body>
 </html>
