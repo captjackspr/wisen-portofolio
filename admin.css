@@ -941,3 +941,74 @@ tbody tr:hover {
     padding-inline: 13px;
   }
 }
+
+/* =========================================================
+   ADMIN PERFORMANCE MODE — LOW-END MOBILE
+========================================================= */
+
+@media (max-width: 650px) {
+  body.admin-body {
+    background: var(--background) !important;
+  }
+
+  .admin-topbar,
+  .admin-tabs {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .admin-topbar {
+    background: rgba(9, 12, 15, 0.98) !important;
+  }
+
+  .admin-tabs {
+    background: rgba(13, 17, 21, 0.98) !important;
+  }
+
+  .stat-card,
+  .data-panel,
+  .conversation-item,
+  .thread-message-row {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 100px;
+  }
+
+  .stat-card,
+  .data-panel,
+  .messages-layout,
+  .thread-message-row,
+  .thread-message-row .message {
+    contain: layout paint;
+  }
+
+  .stat-card,
+  .data-panel,
+  .thread-message-row .message,
+  .message-avatar {
+    box-shadow: none !important;
+  }
+
+  .thread-column {
+    background: rgba(9, 12, 15, 0.98) !important;
+  }
+
+  .thread-messages,
+  .conversation-list {
+    contain: strict;
+    overscroll-behavior: contain;
+    scroll-behavior: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .thread-message-row {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 82px;
+  }
+
+  .stat-card,
+  .conversation-item,
+  .thread-message-row,
+  .thread-message-row .message {
+    will-change: auto !important;
+  }
+}

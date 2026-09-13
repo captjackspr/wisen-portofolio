@@ -1113,9 +1113,10 @@ function renderMessages(messages = []) {
             <span>${escapeHTML(profileRole)}</span>
           </div>
 
-          <div class="message ${
-            isSent ? "message-sent" : "message-received"
-          }">
+          <div
+              class="chat-message-row ${isSent ? "is-sent" : "is-received"}"
+              data-message-id="${escapeHTML(message.id || "")}"
+            >
             <p>${escapeHTML(message.message || "")}</p>
 
             <div class="message-meta">
@@ -1138,6 +1139,92 @@ function renderMessages(messages = []) {
   requestAnimationFrame(() => {
     container.scrollTop = container.scrollHeight;
   });
+}
+
+function appendRealtimeMessage(message) {
+  const container = $("#chat-messages");
+
+  if (!container || !message?.id) {
+    return;
+  }
+
+  /*
+   * Mencegah pesan ganda jika pesan sudah dirender setelah insert manual.
+   */
+  if (container.querySelector(`[data-message-id="${message.id}"]`)) {
+    return;
+  }
+
+  const emptyState = container.querySelector(".chat-empty");
+
+  if (emptyState) {
+    emptyState.remove();
+  }
+
+  const isSent = message.sender_id === state.user?.id;
+  const userName = getCurrentProfileName();
+
+  const profileName = isSent ? userName : "Wisen";
+  const profileRole = isSent ? "Kamu" : "Admin";
+  const profileInitials = isSent ? getInitials(userName) : "W";
+
+  const wrapper = document.createElement("div");
+
+  wrapper.className = `chat-message-row ${
+    isSent ? "is-sent" : "is-received"
+  }`;
+
+  wrapper.dataset.messageId = message.id;
+
+  wrapper.innerHTML = `
+    <div
+      class="message-avatar"
+      aria-hidden="true"
+      title="${escapeHTML(profileName)}"
+    >
+      ${escapeHTML(profileInitials)}
+    </div>
+
+    <div class="message-content">
+      <div class="message-profile">
+        <strong>${escapeHTML(profileName)}</strong>
+        <span>${escapeHTML(profileRole)}</span>
+      </div>
+
+      <div class="message ${
+        isSent ? "message-sent" : "message-received"
+      }">
+        <p>${escapeHTML(message.message || "")}</p>
+
+        <div class="message-meta">
+          <time datetime="${escapeHTML(message.created_at || "")}">
+            ${formatTime(message.created_at)}
+          </time>
+
+          ${
+            isSent
+              ? `<span class="message-delivery" aria-label="Terkirim">✓</span>`
+              : ""
+          }
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.appendChild(wrapper);
+
+  /*
+   * Maksimal 100 pesan berada di DOM agar HP lemah tetap ringan.
+   * Pesan di database tidak terhapus.
+   */
+  const renderedMessages =
+    container.querySelectorAll(".chat-message-row");
+
+  if (renderedMessages.length > 100) {
+    renderedMessages[0].remove();
+  }
+
+  container.scrollTop = container.scrollHeight;
 }
 
 
@@ -1163,7 +1250,7 @@ async function subscribeToMessages() {
         table: "messages",
         filter: `conversation_id=eq.${conversationId}`
       },
-      async (payload) => {
+      (payload) => {
         if (
           state.conversationId !== conversationId ||
           !payload.new
@@ -1171,11 +1258,12 @@ async function subscribeToMessages() {
           return;
         }
 
-        await loadMessages();
+        appendRealtimeMessage(payload.new);
       }
     )
     .subscribe();
 }
+
 
 
 async function sendMessage(event) {
@@ -1213,23 +1301,26 @@ async function sendMessage(event) {
   }
 
   try {
-    const { error } = await supabaseClient
+    const { data: insertedMessage, error } = await supabaseClient
       .from("messages")
       .insert({
         conversation_id: state.conversationId,
         sender_id: state.user.id,
         message
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
       throw error;
     }
 
+    appendRealtimeMessage(insertedMessage);
+
+
     input.value = "";
     input.style.height = "auto";
     updateChatCharacterCount();
-
-    await loadMessages();
 
     input.focus();
 

@@ -3091,3 +3091,138 @@ h3 {
     justify-content: flex-end;
   }
 }
+
+/* =========================================================
+   PERFORMANCE MODE — LOW-END MOBILE
+   Layout dan desain utama tetap dipertahankan
+========================================================= */
+
+@media (max-width: 650px) {
+  /* Hindari proses rendering di luar layar */
+  section,
+  .service-card,
+  .portfolio-card,
+  .testimonial-card,
+  .stat-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 500px;
+  }
+
+  /* Batasi repaint setiap komponen */
+  .service-card,
+  .portfolio-card,
+  .testimonial-card,
+  .chat-panel,
+  .chat-message-row,
+  .message {
+    contain: layout paint;
+  }
+
+  /* Blur adalah efek yang paling berat di HP kentang */
+  .navbar,
+  .chat-panel,
+  .chat-header,
+  .chat-form,
+  .admin-topbar,
+  .admin-tabs {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /*
+   * Warna solid pengganti blur.
+   * Secara visual tetap sangat mirip dengan versi asli.
+   */
+  .navbar {
+    background: rgba(9, 12, 15, 0.98) !important;
+  }
+
+  .chat-header {
+    background: #14191e !important;
+  }
+
+  .chat-form {
+    background: #11161a !important;
+  }
+
+  /* Hapus radial gradient yang terus dikomposisi GPU */
+  .chat-messages {
+    background: #0d1115 !important;
+  }
+
+  /* Shadow dibuat lebih ringan, bentuk UI tetap sama */
+  .chat-panel {
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.38) !important;
+  }
+
+  .message,
+  .message-avatar,
+  .chat-send-button,
+  .chat-form > button {
+    box-shadow: none !important;
+  }
+
+  /*
+   * Transisi hanya untuk properti murah.
+   * Jangan memakai transition: all.
+   */
+  .chat-panel,
+  .chat-message-row,
+  .message,
+  .message-avatar,
+  .chat-send-button,
+  .chat-form > button,
+  .chat-composer {
+    transition:
+      opacity 150ms ease,
+      transform 150ms ease !important;
+  }
+
+  /* Tidak merender daftar chat yang jauh di luar viewport */
+  .chat-message-row {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 82px;
+  }
+
+  /* Mencegah browser menghitung ulang seluruh halaman */
+  .chat-messages,
+  .thread-messages {
+    contain: strict;
+    overscroll-behavior: contain;
+  }
+
+  /* Optimasi scrolling sentuh */
+  .chat-messages,
+  .thread-messages,
+  .conversation-list {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto !important;
+  }
+
+  /* GPU layer hanya ketika panel benar-benar dibuka */
+  .chat-panel.is-open,
+  .chat-panel[aria-hidden="false"] {
+    will-change: transform, opacity;
+  }
+
+  /* Hindari layer GPU permanen */
+  .chat-message-row,
+  .message,
+  .message-avatar,
+  .portfolio-card,
+  .service-card {
+    will-change: auto !important;
+  }
+}
+
+/* Hormati preferensi pengguna yang mengurangi animasi */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
