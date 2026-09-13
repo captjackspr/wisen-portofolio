@@ -268,15 +268,42 @@
 
               <form class="thread-form" id="threadForm" hidden>
                 <label class="sr-only" for="threadInput">Balas pesan</label>
-                <textarea
-                  id="threadInput"
-                  rows="1"
-                  placeholder="Tulis balasan..."
-                  required
-                ></textarea>
 
-                <button class="button button-primary" type="submit">Kirim</button>
+                <div class="thread-composer">
+                  <textarea
+                    id="threadInput"
+                    rows="1"
+                    maxlength="3000"
+                    placeholder="Tulis balasan..."
+                    autocomplete="off"
+                    required
+                  ></textarea>
+
+                  <div class="thread-composer-footer">
+                    <span class="chat-keyboard-hint">
+                      <kbd>Enter</kbd> kirim
+                      <span aria-hidden="true">•</span>
+                      <kbd>Ctrl</kbd> + <kbd>Enter</kbd> baris baru
+                    </span>
+
+                    <span
+                      class="chat-character-count"
+                      id="threadCharacterCount"
+                    >
+                      0/3000
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  class="button button-primary thread-send-button"
+                  id="threadSendButton"
+                  type="submit"
+                >
+                  Kirim
+                </button>
               </form>
+
             </div>
           </div>
         </div>

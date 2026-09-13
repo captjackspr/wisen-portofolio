@@ -105,6 +105,113 @@ function formatTime(value) {
   });
 }
 
+function getInitials(name = "") {
+  const cleanName = String(name).trim();
+
+  if (!cleanName) {
+    return "U";
+  }
+
+  return cleanName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word.charAt(0))
+    .join("")
+    .toUpperCase();
+}
+
+function getCurrentProfileName() {
+  return (
+    state.profile?.full_name ||
+    state.user?.user_metadata?.full_name ||
+    state.user?.user_metadata?.name ||
+    state.user?.email?.split("@")[0] ||
+    "Pengguna"
+  );
+}
+
+function resizeMessageInput(input) {
+  if (!input) {
+    return;
+  }
+
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+}
+
+function updateChatCharacterCount() {
+  const input = $("#chat-input");
+  const counter = $("#chat-character-count");
+
+  if (!input || !counter) {
+    return;
+  }
+
+  const length = input.value.length;
+
+  counter.textContent = `${length}/3000`;
+  counter.classList.toggle("is-near-limit", length >= 2700);
+}
+
+function bindChatComposer() {
+  const input = $("#chat-input");
+  const form = $("#chat-form");
+
+  if (!input || !form) {
+    return;
+  }
+
+  input.addEventListener("input", () => {
+    resizeMessageInput(input);
+    updateChatCharacterCount();
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) {
+      return;
+    }
+
+    /*
+     * Enter dan Numpad Enter mengirim pesan.
+     * Ctrl + Enter membuat baris/paragraf baru.
+     */
+    if (event.ctrlKey) {
+      event.preventDefault();
+
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      const currentValue = input.value;
+
+      input.value =
+        currentValue.slice(0, start) +
+        "\n" +
+        currentValue.slice(end);
+
+      input.selectionStart = start + 1;
+      input.selectionEnd = start + 1;
+
+      resizeMessageInput(input);
+      updateChatCharacterCount();
+      return;
+    }
+
+    if (event.shiftKey || event.altKey || event.metaKey) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!input.value.trim()) {
+      return;
+    }
+
+    form.requestSubmit();
+  });
+
+  updateChatCharacterCount();
+}
+
+
 /* =========================================================
    TOAST
 ========================================================= */
@@ -139,6 +246,8 @@ async function initializeApp() {
 
   bindUIEvents();
   bindMobileMenu();
+  bindChatComposer();
+
 
   await restoreSession();
   await loadInitialData();
@@ -969,57 +1078,105 @@ function renderMessages(messages = []) {
   if (!messages.length) {
     container.innerHTML = `
       <div class="chat-empty">
-        Belum ada pesan. Silakan tulis pesanmu.
+        Belum ada pesan. Mulai percakapan dengan menuliskan kebutuhanmu.
       </div>
     `;
 
     return;
   }
 
+  const userName = getCurrentProfileName();
+  const userInitials = getInitials(userName);
+
   container.innerHTML = messages.map((message) => {
     const isSent = message.sender_id === state.user?.id;
 
-    return `
-      <div class="message ${
-        isSent ? "message-sent" : "message-received"
-      }">
-        <p>${escapeHTML(message.message || "")}</p>
+    const profileName = isSent ? userName : "Wisen";
+    const profileRole = isSent ? "Kamu" : "Admin";
+    const profileInitials = isSent ? userInitials : "W";
 
-        <span>
-          ${formatTime(message.created_at)}
-        </span>
+    return `
+      <div class="chat-message-row ${
+        isSent ? "is-sent" : "is-received"
+      }">
+        <div
+          class="message-avatar"
+          aria-hidden="true"
+          title="${escapeHTML(profileName)}"
+        >
+          ${escapeHTML(profileInitials)}
+        </div>
+
+        <div class="message-content">
+          <div class="message-profile">
+            <strong>${escapeHTML(profileName)}</strong>
+            <span>${escapeHTML(profileRole)}</span>
+          </div>
+
+          <div class="message ${
+            isSent ? "message-sent" : "message-received"
+          }">
+            <p>${escapeHTML(message.message || "")}</p>
+
+            <div class="message-meta">
+              <time datetime="${escapeHTML(message.created_at || "")}">
+                ${formatTime(message.created_at)}
+              </time>
+
+              ${
+                isSent
+                  ? `<span class="message-delivery" aria-label="Terkirim">✓</span>`
+                  : ""
+              }
+            </div>
+          </div>
+        </div>
       </div>
     `;
   }).join("");
 
-  container.scrollTop = container.scrollHeight;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
 }
 
-function subscribeToMessages() {
+
+async function subscribeToMessages() {
   if (!state.conversationId) {
     return;
   }
 
   if (state.realtimeChannel) {
-    supabaseClient.removeChannel(state.realtimeChannel);
+    await supabaseClient.removeChannel(state.realtimeChannel);
+    state.realtimeChannel = null;
   }
 
+  const conversationId = state.conversationId;
+
   state.realtimeChannel = supabaseClient
-    .channel(`conversation-${state.conversationId}`)
+    .channel(`conversation-${conversationId}`)
     .on(
       "postgres_changes",
       {
         event: "INSERT",
         schema: "public",
         table: "messages",
-        filter: `conversation_id=eq.${state.conversationId}`
+        filter: `conversation_id=eq.${conversationId}`
       },
-      async () => {
+      async (payload) => {
+        if (
+          state.conversationId !== conversationId ||
+          !payload.new
+        ) {
+          return;
+        }
+
         await loadMessages();
       }
     )
     .subscribe();
 }
+
 
 async function sendMessage(event) {
   event.preventDefault();
@@ -1030,9 +1187,14 @@ async function sendMessage(event) {
   }
 
   const input = $("#chat-input");
+  const sendButton = $("#chat-send-button");
   const message = input?.value.trim();
 
   if (!message) {
+    return;
+  }
+
+  if (sendButton?.disabled) {
     return;
   }
 
@@ -1041,28 +1203,48 @@ async function sendMessage(event) {
   }
 
   if (!state.conversationId) {
-    showToast("Conversation belum tersedia.", "error");
+    showToast("Percakapan belum tersedia.", "error");
     return;
   }
 
-  const { error } = await supabaseClient
-    .from("messages")
-    .insert({
-      conversation_id: state.conversationId,
-      sender_id: state.user.id,
-      message
-    });
+  if (sendButton) {
+    sendButton.disabled = true;
+    sendButton.classList.add("is-sending");
+  }
 
-  if (error) {
+  try {
+    const { error } = await supabaseClient
+      .from("messages")
+      .insert({
+        conversation_id: state.conversationId,
+        sender_id: state.user.id,
+        message
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    input.value = "";
+    input.style.height = "auto";
+    updateChatCharacterCount();
+
+    await loadMessages();
+
+    input.focus();
+
+  } catch (error) {
     console.error("Gagal mengirim pesan:", error);
-    showToast(error.message, "error");
-    return;
+    showToast(error.message || "Pesan gagal dikirim.", "error");
+
+  } finally {
+    if (sendButton) {
+      sendButton.disabled = false;
+      sendButton.classList.remove("is-sending");
+    }
   }
-
-  input.value = "";
-
-  await loadMessages();
 }
+
 
 /* =========================================================
    START APPLICATION

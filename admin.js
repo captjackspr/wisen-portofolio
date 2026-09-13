@@ -6,6 +6,7 @@
 
 let supabaseClient = null;
 let currentUser = null;
+let currentAdminProfile = null;
 
 const state = {
   projects: [],
@@ -75,8 +76,10 @@ async function initAdmin() {
       );
     }
 
+    currentAdminProfile = profile;
     showAdminContent(profile);
     bindEvents();
+
     await loadDashboard();
 
   } catch (error) {
@@ -122,6 +125,8 @@ function bindEvents() {
   $("#serviceForm")?.addEventListener("submit", submitServiceForm);
 
   $("#threadForm")?.addEventListener("submit", sendAdminMessage);
+
+  bindAdminChatComposer();
 }
 
 function switchTab(tab) {
@@ -725,6 +730,100 @@ function openOrderModal(order) {
   openModal("order-modal");
 }
 
+function getInitials(name = "") {
+  const cleanName = String(name).trim();
+
+  if (!cleanName) {
+    return "U";
+  }
+
+  return cleanName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word.charAt(0))
+    .join("")
+    .toUpperCase();
+}
+
+function getActiveConversation() {
+  return state.conversations.find((conversation) => {
+    return String(conversation.id) === String(state.activeConversationId);
+  }) || null;
+}
+
+function resizeThreadInput(input) {
+  if (!input) return;
+
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+}
+
+function updateThreadCharacterCount() {
+  const input = $("#threadInput");
+  const counter = $("#threadCharacterCount");
+
+  if (!input || !counter) return;
+
+  const length = input.value.length;
+
+  counter.textContent = `${length}/3000`;
+  counter.classList.toggle("is-near-limit", length >= 2700);
+}
+
+function bindAdminChatComposer() {
+  const input = $("#threadInput");
+  const form = $("#threadForm");
+
+  if (!input || !form || input.dataset.composerBound === "true") {
+    return;
+  }
+
+  input.dataset.composerBound = "true";
+
+  input.addEventListener("input", () => {
+    resizeThreadInput(input);
+    updateThreadCharacterCount();
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) {
+      return;
+    }
+
+    if (event.ctrlKey) {
+      event.preventDefault();
+
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      const value = input.value;
+
+      input.value =
+        value.slice(0, start) +
+        "\n" +
+        value.slice(end);
+
+      input.selectionStart = start + 1;
+      input.selectionEnd = start + 1;
+
+      resizeThreadInput(input);
+      updateThreadCharacterCount();
+      return;
+    }
+
+    if (event.shiftKey || event.altKey || event.metaKey) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (input.value.trim()) {
+      form.requestSubmit();
+    }
+  });
+
+  updateThreadCharacterCount();
+}
+
 /* =========================================================
    MESSAGES
 ========================================================= */
@@ -798,30 +897,81 @@ async function openConversation(conversationId) {
 
 function renderThread(messages) {
   const container = $("#threadMessages");
+
   if (!container) return;
 
   if (!messages.length) {
-    container.innerHTML = `<div class="thread-empty">Belum ada pesan di percakapan ini.</div>`;
+    container.innerHTML = `
+      <div class="thread-empty">
+        Belum ada pesan di percakapan ini.
+      </div>
+    `;
+
     return;
   }
+
+  const conversation = getActiveConversation();
+
+  const customerName =
+    conversation?.profiles?.full_name ||
+    "Pengguna";
+
+  const adminName =
+    currentAdminProfile?.full_name ||
+    currentUser?.email?.split("@")[0] ||
+    "Admin";
 
   container.innerHTML = messages.map((message) => {
     const isMine = message.sender_id === currentUser?.id;
 
+    const senderName = isMine ? adminName : customerName;
+    const senderRole = isMine ? "Admin" : "Pengguna";
+    const initials = getInitials(senderName);
+
     return `
-      <div class="message ${isMine ? "message-sent" : "message-received"}">
-        <p>${escapeHtml(message.message || "")}</p>
-        <span>${formatTime(message.created_at)}</span>
+      <div class="thread-message-row ${
+        isMine ? "is-sent" : "is-received"
+      }">
+        <div
+          class="message-avatar"
+          aria-hidden="true"
+          title="${escapeHtml(senderName)}"
+        >
+          ${escapeHtml(initials)}
+        </div>
+
+        <div class="thread-message-content">
+          <div class="thread-message-profile">
+            <strong>${escapeHtml(senderName)}</strong>
+            <span>${escapeHtml(senderRole)}</span>
+          </div>
+
+          <div class="message ${
+            isMine ? "message-sent" : "message-received"
+          }">
+            <p>${escapeHtml(message.message || "")}</p>
+
+            <div class="thread-message-meta">
+              <time datetime="${escapeHtml(message.created_at || "")}">
+                ${formatTime(message.created_at)}
+              </time>
+            </div>
+          </div>
+        </div>
       </div>
     `;
   }).join("");
 
-  container.scrollTop = container.scrollHeight;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
 }
 
-function subscribeToThread(conversationId) {
+
+async function subscribeToThread(conversationId) {
   if (state.messagesChannel) {
-    supabaseClient.removeChannel(state.messagesChannel);
+    await supabaseClient.removeChannel(state.messagesChannel);
+    state.messagesChannel = null;
   }
 
   state.messagesChannel = supabaseClient
@@ -835,33 +985,90 @@ function subscribeToThread(conversationId) {
         filter: `conversation_id=eq.${conversationId}`
       },
       async () => {
-        await openConversation(conversationId);
+        if (
+          String(state.activeConversationId) !==
+          String(conversationId)
+        ) {
+          return;
+        }
+
+        const { data, error } = await supabaseClient
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true });
+
+        if (!error) {
+          renderThread(data || []);
+        }
       }
     )
     .subscribe();
 }
 
+
 async function sendAdminMessage(event) {
   event.preventDefault();
 
   const input = $("#threadInput");
-  const message = input.value.trim();
+  const sendButton = $("#threadSendButton");
+  const message = input?.value.trim();
 
-  if (!message || !state.activeConversationId) return;
-
-  const { error } = await supabaseClient.from("messages").insert({
-    conversation_id: state.activeConversationId,
-    sender_id: currentUser.id,
-    message
-  });
-
-  if (error) {
-    showToast(error.message, "error");
+  if (!message || !state.activeConversationId) {
     return;
   }
 
-  input.value = "";
+  if (sendButton?.disabled) {
+    return;
+  }
+
+  if (sendButton) {
+    sendButton.disabled = true;
+    sendButton.classList.add("is-sending");
+    sendButton.textContent = "Mengirim...";
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("messages")
+      .insert({
+        conversation_id: state.activeConversationId,
+        sender_id: currentUser.id,
+        message
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    input.value = "";
+    input.style.height = "auto";
+    updateThreadCharacterCount();
+    input.focus();
+
+    const { data, error: loadError } = await supabaseClient
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", state.activeConversationId)
+      .order("created_at", { ascending: true });
+
+    if (!loadError) {
+      renderThread(data || []);
+    }
+
+  } catch (error) {
+    console.error("Gagal mengirim balasan:", error);
+    showToast(error.message || "Pesan gagal dikirim.", "error");
+
+  } finally {
+    if (sendButton) {
+      sendButton.disabled = false;
+      sendButton.classList.remove("is-sending");
+      sendButton.textContent = "Kirim";
+    }
+  }
 }
+
 
 /* =========================================================
    STORAGE

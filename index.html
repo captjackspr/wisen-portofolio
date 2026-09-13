@@ -1257,37 +1257,73 @@
     </div>
 
     <div class="chat-messages" id="chat-messages">
-      <div class="message message-received">
-        <p>
-          Halo! Terima kasih sudah mengunjungi portofolio saya. Ada yang bisa
-          saya bantu?
-        </p>
-        <span>Wisen</span>
-      </div>
+      <div class="chat-message-row is-received">
+        <div class="message-avatar" aria-hidden="true">W</div>
 
+        <div class="message-content">
+          <div class="message-profile">
+            <strong>Wisen</strong>
+            <span>Admin</span>
+          </div>
+
+          <div class="message message-received">
+            <p>
+              Halo! Terima kasih sudah mengunjungi portofolio saya. Ada yang bisa
+              saya bantu?
+            </p>
+
+            <div class="message-meta">
+              <time>Baru saja</time>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div class="chat-empty" id="chat-empty">
         Login agar pesanmu tersimpan dan dapat dibalas secara real-time.
       </div>
     </div>
 
-    <form class="chat-form" id="chat-form">
+   <form class="chat-form" id="chat-form">
       <label class="sr-only" for="chat-input">Tulis pesan</label>
 
-      <textarea
-        id="chat-input"
-        name="message"
-        rows="1"
-        placeholder="Tulis pesan..."
-        required
-      ></textarea>
+      <div class="chat-composer">
+        <textarea
+          id="chat-input"
+          name="message"
+          rows="1"
+          maxlength="3000"
+          placeholder="Tulis pesan..."
+          autocomplete="off"
+          required
+        ></textarea>
 
-      <button type="submit" aria-label="Kirim pesan">
+        <div class="chat-composer-footer">
+          <span class="chat-keyboard-hint">
+            <kbd>Enter</kbd> kirim
+            <span aria-hidden="true">•</span>
+            <kbd>Ctrl</kbd> + <kbd>Enter</kbd> baris baru
+          </span>
+
+          <span class="chat-character-count" id="chat-character-count">
+            0/3000
+          </span>
+        </div>
+      </div>
+
+      <button
+        class="chat-send-button"
+        id="chat-send-button"
+        type="submit"
+        aria-label="Kirim pesan"
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="m22 2-7 20-4-9-9-4 20-7Z"/>
           <path d="M22 2 11 13"/>
         </svg>
       </button>
     </form>
+
   </aside>
   <div id="toastContainer" class="toast-container"></div>
 </body>
